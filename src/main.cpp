@@ -69,10 +69,16 @@ kd::Rgb8* strandPtrs[kd::kMaxStrands];
 kd::Settings settings;
 kd::Controls controls(settings);
 
-// Status shared with the display task.
+// Status and the latest Lines, shared with the display task.
 portMUX_TYPE statusMux = portMUX_INITIALIZER_UNLOCKED;
 Status status;
+std::vector<kd::Rgb8> shownLines;
 volatile bool wakeDisplay = true;
+
+// Latest raw IMU reading, for the 'a' axis-check printout.
+portMUX_TYPE readingMux = portMUX_INITIALIZER_UNLOCKED;
+ImuLsm6::Reading lastReading;
+bool printAxes = false;
 
 kd::Vec3 toBody(const kd::Vec3& sensor) {
     const float v[3] = {sensor.x, sensor.y, sensor.z};
@@ -109,6 +115,10 @@ void imuTask(void*) {
         tracker.update(s);
         xSemaphoreGive(trackerLock);
 
+        portENTER_CRITICAL(&readingMux);
+        lastReading = r;
+        portEXIT_CRITICAL(&readingMux);
+
         if (recording) {
             RecordedSample rec{static_cast<uint32_t>(now), r};
             xQueueSend(recordQueue, &rec, 0);  // drop rather than stall
@@ -124,19 +134,21 @@ void imuTask(void*) {
 }
 
 void displayTask(void*) {
+    std::vector<kd::Rgb8> linesCopy(shownLines.size());
     for (;;) {
         Status snapshot;
         portENTER_CRITICAL(&statusMux);
         snapshot = status;
+        memcpy(linesCopy.data(), shownLines.data(), linesCopy.size() * sizeof(kd::Rgb8));
         portEXIT_CRITICAL(&statusMux);
         uint32_t now = millis();
         if (wakeDisplay) {
             wakeDisplay = false;
             status_display::wake(snapshot, now);
         } else {
-            status_display::update(snapshot, now);
+            status_display::update(snapshot, linesCopy.data(), profile.lineCount, profile.pixelsPerLine, now);
         }
-        vTaskDelay(pdMS_TO_TICKS(200));
+        vTaskDelay(pdMS_TO_TICKS(status_display::bladeView() ? 15 : 200));
     }
 }
 
@@ -171,6 +183,13 @@ void handleSerial() {
                 recording = false;
                 Serial.println("# end");
                 break;
+            case 'v':
+                status_display::setBladeView(!status_display::bladeView());
+                Serial.printf("# blade view %s\n", status_display::bladeView() ? "on" : "off");
+                break;
+            case 'a':
+                printAxes = !printAxes;
+                break;
             case 'i':
                 Serial.printf("# profile=%s chip=%s imu=%.0fHz fps=%.0f bias=%.4f,%.4f,%.4f\n", profile.name,
                               imu.chipName(), imuHz, status.fps, tracker.gyroBias().x, tracker.gyroBias().y,
@@ -189,6 +208,24 @@ void drainRecording() {
         Serial.printf("%lu,%.5f,%.5f,%.5f,%.4f,%.4f,%.4f\n", static_cast<unsigned long>(rec.tUs), r.gyro.x,
                       r.gyro.y, r.gyro.z, r.accel.x, r.accel.y, r.accel.z);
     }
+}
+
+// Axis check: which sensor axis sees gravity, and where the tracker thinks
+// the Blade points. Used to fill in imuAxes in a Dong Profile.
+void printAxisCheck() {
+    portENTER_CRITICAL(&readingMux);
+    ImuLsm6::Reading r = lastReading;
+    portEXIT_CRITICAL(&readingMux);
+    const float a[3] = {r.accel.x, r.accel.y, r.accel.z};
+    int up = 0;
+    for (int i = 1; i < 3; ++i)
+        if (fabsf(a[i]) > fabsf(a[up])) up = i;
+    xSemaphoreTake(trackerLock, portMAX_DELAY);
+    kd::Vec3 blade = tracker.pose().orientation.rotate({1, 0, 0});
+    xSemaphoreGive(trackerLock);
+    Serial.printf("sensor accel %6.2f %6.2f %6.2f  up=%c%c | Blade pitch %5.1f heading %6.1f deg\n", a[0], a[1],
+                  a[2], a[up] >= 0 ? '+' : '-', "XYZ"[up], kd::radToDeg(asinf(kd::clampf(blade.z, -1.f, 1.f))),
+                  kd::radToDeg(atan2f(blade.y, blade.x)));
 }
 
 float readBattery(float previous) {
@@ -220,6 +257,7 @@ void setup() {
         }
     }
     lines.assign(profile.lineCount * profile.pixelsPerLine, kd::Rgb8{});
+    shownLines.assign(lines.size(), kd::Rgb8{});
     addStrands();
 
     trackerLock = xSemaphoreCreateMutex();
@@ -241,6 +279,10 @@ void setup() {
     status.imuChip = imu.chipName();
     status.settings = settings;
     status_display::begin();
+#ifdef KD_SCREEN_BLADE
+    status_display::setBladeView(true);
+    wakeDisplay = false;  // go straight to the Blade view so Ignition is visible
+#endif
     xTaskCreatePinnedToCore(displayTask, "display", 6144, nullptr, 1, nullptr, 0);
 }
 
@@ -253,12 +295,17 @@ void loop() {
     static unsigned savedBiasGeneration = 0;
     static uint32_t lastBiasSaveMs = 0;
     static kd::Setting lastChanged = kd::Setting::None;
+    static uint32_t lastAxisPrintMs = 0;
 
     const int64_t frameStartUs = esp_timer_get_time();
     const uint32_t nowMs = millis();
 
     handleSerial();
     drainRecording();
+    if (printAxes && !recording && nowMs - lastAxisPrintMs >= 200) {
+        printAxisCheck();
+        lastAxisPrintMs = nowMs;
+    }
 
     kd::ControlEvent e = controls.update(!digitalRead(kButtonA), !digitalRead(kButtonB), !digitalRead(kButtonC), nowMs);
     if (e.kind != kd::ControlEvent::Kind::None) {
@@ -319,6 +366,7 @@ void loop() {
     fps += (1e6f / float(frameUs < kMinFrameUs ? kMinFrameUs : frameUs) - fps) * 0.05f;
 
     portENTER_CRITICAL(&statusMux);
+    memcpy(shownLines.data(), lines.data(), lines.size() * sizeof(kd::Rgb8));
     status.settings = settings;
     status.changed = lastChanged;
     status.batteryFraction = battery;

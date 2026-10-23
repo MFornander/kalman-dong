@@ -1,9 +1,14 @@
-// The Hilt's 1.14" display: a status screen that wakes on button presses and
-// turns itself off so it doesn't drain the battery or glow through the fur.
+// The Hilt's 1.14" display. Two pages:
+//  - Status: settings and rates; wakes on button presses, then turns itself
+//    off so it doesn't drain the battery or glow through the fur.
+//  - Blade view: the Lines drawn as the Pixels would light them (Hilt left,
+//    tip right), for bench testing without an LED build. Stays on.
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
+#include "kd/color.h"
 #include "kd/controls.h"
 
 struct Status {
@@ -24,10 +29,14 @@ constexpr uint32_t kAwakeMs = 5000;
 
 bool begin();
 
-// Shows `status` and keeps the display awake for kAwakeMs.
+void setBladeView(bool on);
+bool bladeView();
+
+// Shows the Status page for kAwakeMs.
 void wake(const Status& status, uint32_t nowMs);
 
-// Refreshes while awake (call a few times a second) and sleeps when due.
-void update(const Status& status, uint32_t nowMs);
+// Call regularly from the display task. `lines` holds lineCount *
+// pixelsPerLine Pixels, Line after Line, each from the Hilt outward.
+void update(const Status& status, const kd::Rgb8* lines, size_t lineCount, size_t pixelsPerLine, uint32_t nowMs);
 
 }  // namespace status_display

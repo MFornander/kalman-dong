@@ -12,8 +12,10 @@
 #define LED_CHIP SK9822
 #define LED_COLOR_ORDER BGR
 
-#if defined(DONG_PROFILE_PROTO)
+#if defined(DONG_PROFILE_PROTO) || defined(DONG_PROFILE_SCREEN)
 // 1 m Blade, 60 Pixels/m, one Strand folded up-down-up-down through 4 Lines.
+// The "screen" variant is for bench testing the bare board with the Blade
+// view: the Blade runs toward the right edge of the screen held in landscape.
 #define LED_STRAND0_DATA 38
 #define LED_STRAND0_CLOCK 39
 #define LED_DATA_MHZ 12
@@ -34,6 +36,12 @@ inline const kd::DongProfile& dongProfile() {
         p.strands[0].segments[2] = {2, false, 0};
         p.strands[0].segments[3] = {3, true, 0};
         p.power.budgetMilliamps = 3000.f;  // a typical 5 V / 3 A power bank
+#ifdef DONG_PROFILE_SCREEN
+        p.name = "screen";
+        // Body +X = screen right, +Y = screen top, +Z = out of the screen.
+        // Fill in from the serial 'a' axis check (see README).
+        p.imuAxes = {{0, 1, 2}, {1, 1, 1}};
+#endif
         return p;
     }();
     return p;
@@ -105,5 +113,5 @@ inline const kd::DongProfile& dongProfile() {
 }
 
 #else
-#error "Select a Dong Profile with -DDONG_PROFILE_PROTO, -DDONG_PROFILE_2M or -DDONG_PROFILE_LIGHTSWARM"
+#error "Select a Dong Profile with -DDONG_PROFILE_PROTO, _SCREEN, _2M or _LIGHTSWARM"
 #endif

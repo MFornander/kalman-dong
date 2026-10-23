@@ -23,6 +23,7 @@ the Hilt to the tip.
 
 | env               | profile                                                  |
 |-------------------|----------------------------------------------------------|
+| `xiao_screen`     | bare board on the bench; Blade drawn on the display      |
 | `xiao`            | 1 m, 4×60 Pixels, one folded Strand, 3 A budget          |
 | `xiao_2m`         | 2 m, 4×120 Pixels, one folded Strand, 6 A, pack sensing  |
 | `xiao_lightswarm` | LightSwarm Dong: 2 Strands × 150, software SPI, 1.6 A    |
@@ -75,6 +76,58 @@ uv run tools/capture_imu.py swing-figure8 --seconds 60
 
 Recordings land in `test/data/` and are replayed through the motion tracker by
 `pio test -e native -f test_replay`.
+
+## Bench testing with just the board
+
+The `xiao_screen` build draws the four Lines on the display (landscape: Hilt
+on the left, tip on the right, Line 0 on top) exactly as they would go to the
+Pixels, after brightness and the Power Budget. The board stands in for the
+Hilt; the right edge of the screen is the direction the Blade points.
+
+```bash
+pio run -e xiao_screen -t upload
+```
+
+```bash
+pio device monitor -e xiao_screen
+```
+
+Serial commands: `i` status line, `a` toggle axis check (5 Hz), `v` toggle the
+Blade view, `R`/`S` start/stop raw IMU streaming.
+
+1. **Boot and IMU.** The Blade view comes up right away (C shows the Status page). `i`
+   should name the chip (LSM6DS3 / LSM6DS3TR-C / LSM6DSO) and report about
+   833 Hz IMU and up to 240 fps.
+2. **IMU axes.** Press `a` and hold the board in three poses: screen right
+   edge pointing up, screen top edge pointing up, lying flat face up. The
+   `up=` field names the sensor axis that sees gravity in each pose; those
+   three are body +X, +Y and +Z. Put them into `imuAxes` in the `screen`
+   profile in [src/profiles.h](src/profiles.h) (`source` = sensor axis
+   0/1/2 for X/Y/Z, `sign` = -1 where `up` was negative), rebuild, and check
+   that `Blade pitch` reads +90 with the right edge up.
+3. **Ignition.** Reset with the board still: the bars extend from the left
+   in about a second. Reset while shaking it: still done within two seconds.
+4. **Slicing.** Sweep the board slowly left and right and tilt it up and
+   down: the colors should change as if you are moving through fixed clouds,
+   and come back when you return to the same pointing direction.
+5. **Girth.** Long-press B to 0: all four bars match. Step it up and roll the
+   board about its long axis: colors roll between the bars.
+6. **Buttons.** A cycles Palettes, long A steps Clear Sky, B brightness, C
+   shows the Status page, long C Re-levels (the clouds jump to the "home"
+   view for wherever you point).
+7. **Settings survive power cycles.** Change something, wait 3 s, unplug,
+   plug back in.
+8. **Rest.** Lay the board down: after 60 s the bars dim to 20%; pick it up
+   and they brighten instantly. Leave it a few minutes and watch for heading
+   drift (the clouds slowly turning).
+9. **Drift data.** Record the board lying still and some waving for the
+   replay tests: `uv run tools/capture_imu.py bench-still --seconds 120`.
+10. **LED outputs (optional).** A scope or logic analyzer on GPIO38 (data)
+    and GPIO39 (clock) should show the SK9822 stream while the display keeps
+    updating; a short strip on those pads works too (mind the 3.3 V logic).
+
+Screen colors are gamma-encoded to approximate what the Pixels emit; they
+will still look more saturated than LEDs under fur.
 
 ## Status
 
