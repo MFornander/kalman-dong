@@ -33,8 +33,10 @@ struct Rig {
     Rig() {
         imu.truth = heldPose();
         imu.gyroBias = {0.02f, -0.015f, 0.03f};
-        imu.gyroNoise = 0.01f;
-        imu.accelNoise = 0.05f;
+        // Matches a real LSM6DS3TR-C lying on a desk (test/data/bench-desk-20s):
+        // ~0.03 rad/s and ~0.05 m/s^2 standard deviation, sample to sample.
+        imu.gyroNoise = 0.05f;
+        imu.accelNoise = 0.08f;
     }
 };
 

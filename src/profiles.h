@@ -8,9 +8,8 @@
 
 #include "kd/dong_profile.h"
 
-// FastLED chip type and color order for every profile below.
-#define LED_CHIP SK9822
-#define LED_COLOR_ORDER BGR
+// SK9822 / APA102 color byte order on the wire, for every profile below.
+#define LED_WIRE_ORDER "BGR"
 
 #if defined(DONG_PROFILE_PROTO) || defined(DONG_PROFILE_SCREEN)
 // 1 m Blade, 60 Pixels/m, one Strand folded up-down-up-down through 4 Lines.
@@ -48,12 +47,16 @@ inline const kd::DongProfile& dongProfile() {
 }
 
 #elif defined(DONG_PROFILE_2M)
-// 2 m Blade, 60 Pixels/m, one Strand folded through 4 Lines; pack voltage
-// sensed on GPIO40 through a divider.
+// 2 m Blade, 60 Pixels/m, one Strand folded through 4 Lines.
+//
+// Pack voltage is not sensed: only GPIO1-20 can read analog on the S3, and
+// on this carrier they are all taken except GPIO10, which reads the board's
+// own JST LiPo through its onboard divider (ratio ~2.975). Use that for a 1S
+// pack on the JST, or add an I2C fuel gauge on the Grove port.
 #define LED_STRAND0_DATA 38
 #define LED_STRAND0_CLOCK 39
 #define LED_DATA_MHZ 8
-#define BATTERY_PIN 40
+#define BATTERY_PIN -1
 
 inline const kd::DongProfile& dongProfile() {
     static const kd::DongProfile p = [] {
@@ -70,11 +73,6 @@ inline const kd::DongProfile& dongProfile() {
         p.strands[0].segments[2] = {2, false, 0};
         p.strands[0].segments[3] = {3, true, 0};
         p.power.budgetMilliamps = 6000.f;
-        // 2S LiPo through a 5 V converter, read via a 1:4 divider.
-        p.battery.sensed = true;
-        p.battery.dividerRatio = 4.f;
-        p.battery.emptyVolts = 6.6f;
-        p.battery.fullVolts = 8.3f;
         return p;
     }();
     return p;
@@ -82,8 +80,7 @@ inline const kd::DongProfile& dongProfile() {
 
 #elif defined(DONG_PROFILE_LIGHTSWARM)
 // The LightSwarm Dong: two Strands of 150, each fed at the tip and folded
-// into two Lines. Two Strands cannot share one hardware SPI bus, so this
-// profile bit-bangs (build adds FASTLED_FORCE_SOFTWARE_SPI).
+// into two Lines. Both Strands take turns on the one SPI bus.
 #define LED_STRAND0_DATA 38
 #define LED_STRAND0_CLOCK 39
 #define LED_STRAND1_DATA 40
@@ -115,3 +112,6 @@ inline const kd::DongProfile& dongProfile() {
 #else
 #error "Select a Dong Profile with -DDONG_PROFILE_PROTO, _SCREEN, _2M or _LIGHTSWARM"
 #endif
+
+static_assert(BATTERY_PIN < 0 || (BATTERY_PIN >= 1 && BATTERY_PIN <= 20),
+              "BATTERY_PIN must be an ADC pin (GPIO1-20 on the ESP32-S3)");

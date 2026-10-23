@@ -7,7 +7,6 @@
 // this file only wires it to the hardware.
 
 #include <Arduino.h>
-#include <FastLED.h>
 #include <Wire.h>
 
 #include <vector>
@@ -15,9 +14,11 @@
 #include "kd/controls.h"
 #include "imu_lsm6.h"
 #include "kd/motion_tracker.h"
+#include "kd/noise.h"
 #include "kd/orientation_filter.h"
 #include "kd/power_governor.h"
 #include "profiles.h"
+#include "sk9822_spi.h"
 #include "kd/renderer.h"
 #include "status_display.h"
 #include "store.h"
@@ -37,7 +38,6 @@ constexpr uint32_t kMinFrameUs = 1000000 / 240;  // cap at 240 fps
 constexpr uint32_t kBiasSaveIntervalMs = 60000;   // spare the flash
 constexpr uint32_t kBatteryPeriodMs = 500;
 
-static_assert(sizeof(CRGB) == sizeof(kd::Rgb8), "Pixel buffers are shared between core and FastLED");
 
 const kd::DongProfile& profile = dongProfile();
 
@@ -65,6 +65,7 @@ kd::PowerGovernor governor(profile.power, profile.battery, strandMap.physicalPix
 std::vector<kd::Rgb8> lines;
 std::vector<kd::Rgb8> strandPixels[kd::kMaxStrands];
 kd::Rgb8* strandPtrs[kd::kMaxStrands];
+Sk9822Spi leds;
 
 kd::Settings settings;
 kd::Controls controls(settings);
@@ -74,6 +75,11 @@ portMUX_TYPE statusMux = portMUX_INITIALIZER_UNLOCKED;
 Status status;
 std::vector<kd::Rgb8> shownLines;
 volatile bool wakeDisplay = true;
+
+// Per-stage frame timing (us, smoothed), printed by 'i'.
+struct FrameTiming {
+    float render = 0, limit = 0, show = 0, total = 0;
+} timing;
 
 // Latest raw IMU reading, for the 'a' axis-check printout.
 portMUX_TYPE readingMux = portMUX_INITIALIZER_UNLOCKED;
@@ -148,25 +154,24 @@ void displayTask(void*) {
         } else {
             status_display::update(snapshot, linesCopy.data(), profile.lineCount, profile.pixelsPerLine, now);
         }
-        vTaskDelay(pdMS_TO_TICKS(status_display::bladeView() ? 15 : 200));
+        vTaskDelay(pdMS_TO_TICKS(status_display::bladeView() ? 4 : 200));
     }
 }
 
-void addStrands() {
+bool addStrands() {
+    const Sk9822Spi::Strand pins[] = {
+        {LED_STRAND0_DATA, LED_STRAND0_CLOCK, strandMap.strandLength(0)},
+#ifdef LED_STRAND1_DATA
+        {LED_STRAND1_DATA, LED_STRAND1_CLOCK, strandMap.strandLength(1)},
+#endif
+    };
     for (size_t s = 0; s < profile.strandCount; ++s) {
         strandPixels[s].assign(strandMap.strandLength(s), kd::Rgb8{});
         strandPtrs[s] = strandPixels[s].data();
     }
-    CRGB* s0 = reinterpret_cast<CRGB*>(strandPtrs[0]);
-    FastLED.addLeds<LED_CHIP, LED_STRAND0_DATA, LED_STRAND0_CLOCK, LED_COLOR_ORDER, DATA_RATE_MHZ(LED_DATA_MHZ)>(
-        s0, strandPixels[0].size());
-#ifdef LED_STRAND1_DATA
-    CRGB* s1 = reinterpret_cast<CRGB*>(strandPtrs[1]);
-    FastLED.addLeds<LED_CHIP, LED_STRAND1_DATA, LED_STRAND1_CLOCK, LED_COLOR_ORDER, DATA_RATE_MHZ(LED_DATA_MHZ)>(
-        s1, strandPixels[1].size());
-#endif
-    FastLED.setBrightness(255);  // PowerGovernor does the limiting
-    FastLED.clear(true);
+    if (!leds.begin(pins, profile.strandCount, LED_DATA_MHZ * 1000000u, LED_WIRE_ORDER)) return false;
+    leds.show(strandPtrs);  // start dark
+    return true;
 }
 
 void handleSerial() {
@@ -190,10 +195,39 @@ void handleSerial() {
             case 'a':
                 printAxes = !printAxes;
                 break;
+            case 'b': {  // micro-benchmark of the Cloud Field's building blocks
+                volatile float sink = 0;
+                int64_t t0 = esp_timer_get_time();
+                for (int k = 0; k < 2000; ++k) sink = sink + kd::noise3(k * 0.013f, 1.7f, k * 0.007f);
+                int64_t t1 = esp_timer_get_time();
+                kd::CloudField::Instant inst = renderer.cloudField().at(12.0);
+                for (int k = 0; k < 2000; ++k) sink = sink + inst.colorAt({k * 0.001f, 0.2f, 0.3f}, kd::palette(0)).r;
+                int64_t t2 = esp_timer_get_time();
+                for (int k = 0; k < 2000; ++k) sink = sink + inst.hue({k * 0.001f, 0.2f, 0.3f});
+                int64_t t3 = esp_timer_get_time();
+                for (int k = 0; k < 2000; ++k) sink = sink + kd::fbm3(k * 0.013f, 1.7f, k * 0.007f, 2);
+                int64_t t4 = esp_timer_get_time();
+                for (int k = 0; k < 2000; ++k) sink = sink + kd::palette(0).at(k * 0.0005f).g;
+                int64_t t5 = esp_timer_get_time();
+                Serial.printf("# noise3 %.2f us, colorAt %.2f us, hue %.2f us, fbm3x2 %.2f us, palette %.2f us\n",
+                              (t1 - t0) / 2000.f, (t2 - t1) / 2000.f, (t3 - t2) / 2000.f, (t4 - t3) / 2000.f,
+                              (t5 - t4) / 2000.f);
+                break;
+            }
             case 'i':
                 Serial.printf("# profile=%s chip=%s imu=%.0fHz fps=%.0f bias=%.4f,%.4f,%.4f\n", profile.name,
                               imu.chipName(), imuHz, status.fps, tracker.gyroBias().x, tracker.gyroBias().y,
                               tracker.gyroBias().z);
+                Serial.printf(
+                    "# frame us: render %.0f limit+scatter %.0f show %.0f (waited %lu, sends %lu) total %.0f | "
+                    "ignited %d rest %.1fs\n",
+                    timing.render, timing.limit, timing.show, (unsigned long)leds.lastWaitUs(),
+                    (unsigned long)leds.sendUs(), timing.total, tracker.ignited(), tracker.restSeconds());
+                {
+                    uint32_t textUs, barsUs;
+                    status_display::drawTimes(textUs, barsUs);
+                    Serial.printf("# display us: text %lu bars %lu\n", (unsigned long)textUs, (unsigned long)barsUs);
+                }
                 break;
             default:
                 break;
@@ -228,6 +262,27 @@ void printAxisCheck() {
                   kd::radToDeg(atan2f(blade.y, blade.x)));
 }
 
+// A reset in the middle of an IMU read can leave the IMU holding SDA low.
+// Clock it out of the half-finished byte and send a STOP before Wire starts.
+void releaseI2cBus() {
+    pinMode(kImuSda, INPUT_PULLUP);
+    pinMode(kImuScl, OUTPUT_OPEN_DRAIN);
+    digitalWrite(kImuScl, HIGH);
+    for (int i = 0; i < 9 && digitalRead(kImuSda) == LOW; ++i) {
+        digitalWrite(kImuScl, LOW);
+        delayMicroseconds(5);
+        digitalWrite(kImuScl, HIGH);
+        delayMicroseconds(5);
+    }
+    pinMode(kImuSda, OUTPUT_OPEN_DRAIN);
+    digitalWrite(kImuSda, LOW);
+    delayMicroseconds(5);
+    digitalWrite(kImuSda, HIGH);  // STOP: SDA rises while SCL is high
+    delayMicroseconds(5);
+    pinMode(kImuSda, INPUT);
+    pinMode(kImuScl, INPUT);
+}
+
 float readBattery(float previous) {
 #if BATTERY_PIN >= 0
     float volts = analogReadMilliVolts(BATTERY_PIN) * 0.001f * profile.battery.dividerRatio;
@@ -258,14 +313,18 @@ void setup() {
     }
     lines.assign(profile.lineCount * profile.pixelsPerLine, kd::Rgb8{});
     shownLines.assign(lines.size(), kd::Rgb8{});
-    addStrands();
+    if (!addStrands()) Serial.println("LED output failed to start (SPI2)");
 
     trackerLock = xSemaphoreCreateMutex();
     imuSignal = xSemaphoreCreateBinary();
     recordQueue = xQueueCreate(512, sizeof(RecordedSample));
 
+    releaseI2cBus();
     Wire.begin(kImuSda, kImuScl, 400000);
-    imuOk = imu.begin(Wire);
+    for (int attempt = 0; attempt < 5 && !imuOk; ++attempt) {
+        if (attempt) delay(20);
+        imuOk = imu.begin(Wire);
+    }
     tracker.begin(store::loadGyroBias());
     if (imuOk) {
         pinMode(kImuInt1, INPUT);
@@ -355,14 +414,24 @@ void loop() {
     }
     in.sinceIgnition = ignitedAtUs < 0 ? 0.f : (frameStartUs - ignitedAtUs) * 1e-6f;
 
+    const int64_t t0 = esp_timer_get_time();
     renderer.render(in, settings, lines.data());
+    const int64_t t1 = esp_timer_get_time();
     governor.limit(lines.data(), lines.size(), battery);
     strandMap.scatter(lines.data(), strandPtrs);
-    FastLED.show();
+    const int64_t t2 = esp_timer_get_time();
+    leds.show(strandPtrs);
+    const int64_t t3 = esp_timer_get_time();
+    auto smooth = [](float& v, int64_t us) { v += (float(us) - v) * 0.05f; };
+    smooth(timing.render, t1 - t0);
+    smooth(timing.limit, t2 - t1);
+    smooth(timing.show, t3 - t2);
+    smooth(timing.total, t3 - frameStartUs);
 
-    // Pixels latch at the end of show(): predict that far ahead next frame.
+    // Pixels light once the queued frame has been clocked out: predict that
+    // far ahead next frame.
     const int64_t frameUs = esp_timer_get_time() - frameStartUs;
-    lookahead += (frameUs * 1e-6f - lookahead) * 0.05f;
+    lookahead += ((frameUs + leds.sendUs()) * 1e-6f - lookahead) * 0.05f;
     fps += (1e6f / float(frameUs < kMinFrameUs ? kMinFrameUs : frameUs) - fps) * 0.05f;
 
     portENTER_CRITICAL(&statusMux);

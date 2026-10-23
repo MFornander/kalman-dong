@@ -1,7 +1,8 @@
 #include "noise.h"
 
-#include <cmath>
 #include <cstdint>
+
+#include "kd_math.h"
 
 namespace kd {
 
@@ -40,11 +41,11 @@ inline float lerp(float a, float b, float t) { return a + t * (b - a); }
 }  // namespace
 
 float noise3(float x, float y, float z) {
-    float fx = std::floor(x), fy = std::floor(y), fz = std::floor(z);
-    int X = static_cast<int>(fx) & 255, Y = static_cast<int>(fy) & 255, Z = static_cast<int>(fz) & 255;
-    x -= fx;
-    y -= fy;
-    z -= fz;
+    int ix = fastFloor(x), iy = fastFloor(y), iz = fastFloor(z);
+    int X = ix & 255, Y = iy & 255, Z = iz & 255;
+    x -= static_cast<float>(ix);
+    y -= static_cast<float>(iy);
+    z -= static_cast<float>(iz);
     float u = fade(x), v = fade(y), w = fade(z);
 
     int A = perm(X) + Y, AA = perm(A) + Z, AB = perm(A + 1) + Z;

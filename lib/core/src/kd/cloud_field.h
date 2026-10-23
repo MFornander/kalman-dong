@@ -21,21 +21,41 @@ struct CloudSettings {
 
 class CloudField {
 public:
+    // The Cloud Field frozen at one Show Clock time. Take one per frame: it
+    // does the double-precision time math (slow on the Dong, which has no
+    // double FPU) once instead of for every sample.
+    class Instant {
+    public:
+        Rgbf colorAt(const Vec3& p, const Palette& pal) const;
+        float cloudiness(const Vec3& p) const;
+        float hue(const Vec3& p) const;
+
+    private:
+        friend class CloudField;
+        CloudSettings settings_;
+        float invSize_ = 1.f;
+        Vec3 hueOffset_;
+        Vec3 densityOffset_;
+        float cycle_ = 0.f;
+    };
+
     explicit CloudField(const CloudSettings& settings = {}) : settings_(settings) {}
 
     const CloudSettings& settings() const { return settings_; }
     void setSettings(const CloudSettings& s) { settings_ = s; }
     void setClearSky(float share) { settings_.clearSky = clampf(share, 0.f, 0.9f); }
 
+    Instant at(double showTime) const;
+
     // Color at world point `p` (metres, Hilt at origin, Z up) at Show Clock
     // time `showTime` (seconds).
-    Rgbf colorAt(const Vec3& p, double showTime, const Palette& pal) const;
+    Rgbf colorAt(const Vec3& p, double showTime, const Palette& pal) const { return at(showTime).colorAt(p, pal); }
 
     // 0 = Clear Sky, 1 = solid cloud.
-    float cloudiness(const Vec3& p, double showTime) const;
+    float cloudiness(const Vec3& p, double showTime) const { return at(showTime).cloudiness(p); }
 
     // Position (0..1, wrapping) within the Palette.
-    float hue(const Vec3& p, double showTime) const;
+    float hue(const Vec3& p, double showTime) const { return at(showTime).hue(p); }
 
 private:
     CloudSettings settings_;

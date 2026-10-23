@@ -42,8 +42,9 @@ public:
     void render(const FrameInput& in, const Settings& settings, Rgb8* lines);
 
 private:
-    Rgbf ignitionColor(float along, float front, const Palette& pal, double localTime) const;
-    void renderSlice(const FrameInput& in, const Palette& pal, size_t line, float girth);
+    Rgbf ignitionColor(float along, float front, const Palette& pal, float hum) const;
+    void renderSlice(const CloudField::Instant& clouds, const Pose& pose, const Palette& pal, size_t line,
+                     float girth);
 
     BladeGeometry geometry_;
     CloudField field_;

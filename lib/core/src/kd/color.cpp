@@ -11,18 +11,21 @@ Rgb8 toRgb8(const Rgbf& c) {
     return {q(c.r), q(c.g), q(c.b)};
 }
 
-Rgbf toRgbf(const Rgb8& c) { return {c.r / 255.f, c.g / 255.f, c.b / 255.f}; }
+Rgbf toRgbf(const Rgb8& c) {
+    constexpr float k = 1.f / 255.f;  // multiply: the S3's FPU has no divide
+    return {c.r * k, c.g * k, c.b * k};
+}
 
 Rgbf mix(const Rgbf& a, const Rgbf& b, float t) {
     return {lerpf(a.r, b.r, t), lerpf(a.g, b.g, t), lerpf(a.b, b.b, t)};
 }
 
 Rgbf Palette::at(float pos) const {
-    float p = pos - std::floor(pos);
-    float idx = p * 16.f;
-    int i0 = static_cast<int>(idx) & 15;
+    float idx = (pos - static_cast<float>(fastFloor(pos))) * 16.f;
+    int whole = fastFloor(idx);
+    int i0 = whole & 15;
     int i1 = (i0 + 1) & 15;
-    return mix(toRgbf(entries[i0]), toRgbf(entries[i1]), idx - std::floor(idx));
+    return mix(toRgbf(entries[i0]), toRgbf(entries[i1]), idx - static_cast<float>(whole));
 }
 
 namespace {

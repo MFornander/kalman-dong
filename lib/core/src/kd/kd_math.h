@@ -15,6 +15,12 @@ inline float smoothstep(float e0, float e1, float x) {
     float t = clampf((x - e0) / (e1 - e0), 0.f, 1.f);
     return t * t * (3.f - 2.f * t);
 }
+// floor() for values well inside int range; std::floor is an out-of-line
+// call on the ESP32-S3 and this sits in the hottest loops.
+inline int fastFloor(float v) {
+    int i = static_cast<int>(v);
+    return v < static_cast<float>(i) ? i - 1 : i;
+}
 inline float degToRad(float d) { return d * (kPi / 180.f); }
 inline float radToDeg(float r) { return r * (180.f / kPi); }
 

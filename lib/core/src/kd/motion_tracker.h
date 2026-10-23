@@ -19,9 +19,9 @@ struct ImuSample {
 };
 
 struct MotionSettings {
-    // Rest: gyro and accelerometer steady for `restHold` seconds.
-    float restGyroNoise = 0.05f;   // rad/s; allowed wobble around the recent mean
-    float restAccelNoise = 0.35f;  // m/s^2; allowed wobble around the recent mean
+    // Rest: smoothed gyro and accelerometer steady for `restHold` seconds.
+    float restGyroNoise = 0.03f;   // rad/s; allowed wobble around the recent mean
+    float restAccelNoise = 0.2f;   // m/s^2; allowed wobble around the recent mean
     float restMaxBiasStep = 0.03f; // rad/s; larger steady rates are real turning, not bias
     float restHold = 0.5f;         // s
     float biasTimeConstant = 2.0f; // s; how fast bias is re-learned at Rest
@@ -84,6 +84,8 @@ private:
 
     // Stillness: short-term means and how long readings stayed near them.
     bool haveMeans_ = false;
+    Vec3 gyroFast_;
+    Vec3 accelFast_;
     Vec3 gyroMean_;
     Vec3 accelMean_;
     float stillTime_ = 0;

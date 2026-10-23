@@ -40,6 +40,7 @@ std::vector<Row> parseRecording(std::istream& in) {
 
 struct ReplayResult {
     bool ignited = false;
+    bool learnedBias = false;  // Ignition found the Dong still (didn't time out)
     double ignitedAt = 0;
     float worstRestTiltDeg = 0;  // estimated vs measured "up" while at Rest
     bool finite = true;
@@ -60,6 +61,7 @@ ReplayResult replay(const std::vector<Row>& rows, OrientationFilter& filter) {
         if (tracker.ignited() && !result.ignited) {
             result.ignited = true;
             result.ignitedAt = t;
+            result.learnedBias = tracker.biasGeneration() > 0;
         }
         Pose p = tracker.pose();
         result.finite &= std::isfinite(p.orientation.w) && std::isfinite(p.push.x);
@@ -111,6 +113,9 @@ TEST_CASE("every recording in test/data replays cleanly") {
         CHECK(r.ignited);
         CHECK(r.ignitedAt < 2.5);
         CHECK(r.worstRestTiltDeg < 3.f);
+        // Recordings that start with the Dong lying still must ignite by
+        // learning the gyro bias, not by timing out.
+        if (entry.path().filename().string().rfind("bench-desk", 0) == 0) CHECK(r.learnedBias);
         MESSAGE(entry.path().filename().string() << ": " << std::string(mahony.name()) << " ignited at " << r.ignitedAt
                                                  << " s, worst tilt at Rest " << r.worstRestTiltDeg << " deg");
     }

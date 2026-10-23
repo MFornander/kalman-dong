@@ -5,7 +5,11 @@
 namespace kd {
 
 namespace {
-constexpr float kMeanTimeConstant = 0.2f;  // s; window for "recent mean" in Rest detection
+// Rest detection compares a lightly smoothed reading against a slower mean.
+// Comparing raw samples would let sensor noise (~0.03 rad/s on a real
+// LSM6DS3TR-C) break stillness on almost every sample.
+constexpr float kFastTimeConstant = 0.05f;  // s
+constexpr float kMeanTimeConstant = 0.3f;   // s
 constexpr float kMaxDt = 0.05f;            // s; larger gaps are treated as this
 }  // namespace
 
@@ -29,16 +33,19 @@ void MotionTracker::begin(const Vec3& savedBias) {
 
 void MotionTracker::updateStillness(const ImuSample& s) {
     if (!haveMeans_) {
-        gyroMean_ = s.gyro;
-        accelMean_ = s.accel;
+        gyroMean_ = gyroFast_ = s.gyro;
+        accelMean_ = accelFast_ = s.accel;
         haveMeans_ = true;
     }
-    float a = s.dt / (kMeanTimeConstant + s.dt);
-    gyroMean_ += (s.gyro - gyroMean_) * a;
-    accelMean_ += (s.accel - accelMean_) * a;
+    float fast = s.dt / (kFastTimeConstant + s.dt);
+    float slow = s.dt / (kMeanTimeConstant + s.dt);
+    gyroFast_ += (s.gyro - gyroFast_) * fast;
+    accelFast_ += (s.accel - accelFast_) * fast;
+    gyroMean_ += (s.gyro - gyroMean_) * slow;
+    accelMean_ += (s.accel - accelMean_) * slow;
 
-    bool still = (s.gyro - gyroMean_).norm() < settings_.restGyroNoise &&
-                 (s.accel - accelMean_).norm() < settings_.restAccelNoise;
+    bool still = (gyroFast_ - gyroMean_).norm() < settings_.restGyroNoise &&
+                 (accelFast_ - accelMean_).norm() < settings_.restAccelNoise;
     if (still) {
         stillTime_ += s.dt;
         stillGyroSum_ += s.gyro * s.dt;

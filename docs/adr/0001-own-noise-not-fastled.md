@@ -1,6 +1,6 @@
 # Own Cloud Field noise instead of FastLED's
 
-The Cloud Field uses our own small 3D Perlin noise and color code in the pure-C++ core library, not FastLED's `inoise16`/palette functions, even though FastLED is already a dependency. FastLED's native (host) build is heavy and fast-moving, and we want the entire Cloud Field — the heart of the illusion — unit-testable on a PC without it. FastLED is used only on the Dong, to push Pixels out to the Strands.
+The Cloud Field uses our own small 3D Perlin noise and color code in the pure-C++ core library, not FastLED's `inoise16`/palette functions, even though FastLED is already a dependency. FastLED's native (host) build is heavy and fast-moving, and we want the entire Cloud Field — the heart of the illusion — unit-testable on a PC without it. (FastLED has since been dropped entirely; see [0005](0005-own-led-driver.md).)
 
 ## Considered Options
 

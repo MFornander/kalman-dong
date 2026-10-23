@@ -27,20 +27,20 @@ Renderer::Renderer(const DongProfile& profile)
 
 // A lightsaber blade extending to `front` (0..1 along the Blade): a pale
 // core tinted by the Palette, with a white-hot leading edge.
-Rgbf Renderer::ignitionColor(float along, float front, const Palette& pal, double localTime) const {
+Rgbf Renderer::ignitionColor(float along, float front, const Palette& pal, float hum) const {
     if (along > front) return {};
-    float hum = 0.92f + 0.08f * std::sin(static_cast<float>(std::fmod(localTime * 37.0, 2.0 * kPi)));
     Rgbf core = mix(pal.at(along * 0.25f), kWhite, 0.45f) * hum;
     float edge = 1.f - smoothstep(0.f, 0.06f, front - along);
     return front < 1.f ? mix(core, kWhite, edge) : core;
 }
 
-void Renderer::renderSlice(const FrameInput& in, const Palette& pal, size_t line, float girth) {
+void Renderer::renderSlice(const CloudField::Instant& clouds, const Pose& pose, const Palette& pal, size_t line,
+                           float girth) {
     const float first = geometry_.firstPixelDistance();
     const float span = geometry_.lastPixelDistance() - first;
     for (size_t j = 0; j < sampleCount_; ++j) {
         float d = first + span * float(j) / float(sampleCount_ - 1);
-        samples_[j] = field_.colorAt(geometry_.fieldPoint(in.pose, line, d, girth), in.showTime, pal);
+        samples_[j] = clouds.colorAt(geometry_.fieldPoint(pose, line, d, girth), pal);
     }
     const size_t ppl = pixels_.size();
     for (size_t i = 0; i < ppl; ++i) {
@@ -63,17 +63,19 @@ void Renderer::render(const FrameInput& in, const Settings& settings, Rgb8* line
     const float level = settings.brightnessValue() * restDim(in.restSeconds);
     const bool warn = in.batteryFraction >= 0.f && in.batteryFraction < criticalBattery_;
     const float pulse = 0.5f + 0.5f * std::sin(static_cast<float>(std::fmod(in.localTime * kPi, 2.0 * kPi)));
+    const float hum = 0.92f + 0.08f * std::sin(static_cast<float>(std::fmod(in.localTime * 37.0, 2.0 * kPi)));
+    const CloudField::Instant clouds = field_.at(in.showTime);
 
     for (size_t line = 0; line < lineCount; ++line) {
-        if (!igniting && (line == 0 || girth > 0.f)) renderSlice(in, pal, line, girth);
+        if (!igniting && (line == 0 || girth > 0.f)) renderSlice(clouds, in.pose, pal, line, girth);
         Rgb8* out = lines + line * ppl;
         for (size_t i = 0; i < ppl; ++i) {
             float along = ppl > 1 ? float(i) / float(ppl - 1) : 0.f;
             Rgbf c;
             if (igniting) {
-                c = ignitionColor(along, in.ignitionProgress, pal, in.localTime);
+                c = ignitionColor(along, in.ignitionProgress, pal, hum);
             } else if (fade < 1.f) {
-                c = mix(ignitionColor(along, 1.f, pal, in.localTime), pixels_[i], fade);
+                c = mix(ignitionColor(along, 1.f, pal, hum), pixels_[i], fade);
             } else {
                 c = pixels_[i];
             }

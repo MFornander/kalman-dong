@@ -92,7 +92,8 @@ pio run -e xiao_screen -t upload
 pio device monitor -e xiao_screen
 ```
 
-Serial commands: `i` status line, `a` toggle axis check (5 Hz), `v` toggle the
+Serial commands: `i` status plus per-stage frame and display timings, `a`
+toggle axis check (5 Hz), `b` Cloud Field micro-benchmark, `v` toggle the
 Blade view, `R`/`S` start/stop raw IMU streaming.
 
 1. **Boot and IMU.** The Blade view comes up right away (C shows the Status page). `i`
@@ -131,11 +132,32 @@ will still look more saturated than LEDs under fur.
 
 ## Status
 
-Built and host-tested only; **not yet run on hardware**. First things to
-check on a real Dong:
+Running on the bare board: LSM6DS3TR-C at 817 Hz, Ignition learns the gyro
+bias, Rest detection works. Frame rates measured on the board (LED output
+running, no LEDs attached):
 
-1. IMU axis directions vs. the Blade (set `imuAxes` in the profile).
-2. FastLED on SPI3 alongside the display on SPI2 (no flicker, display works).
-3. Frame rate and IMU rate on the display (targets: ~240 fps, 833 Hz).
-4. Real current draw vs. the Power Budget.
-5. The two-Strand profile's software SPI.
+| env               | render | frame  | fps           |
+|-------------------|--------|--------|---------------|
+| `xiao_screen`     | 2.2 ms | 2.9 ms | 240 (the cap) |
+| `xiao_lightswarm` | 2.9 ms | 3.7 ms | 240 (the cap) |
+| `xiao_2m`         | 3.7 ms | 4.6 ms | 217           |
+
+Hardware lessons so far:
+
+- FastLED 3.10.8 crashed the S3 and 3.9.20 bit-bangs (3.5 ms per frame), so
+  Pixels go out through our own SPI2 DMA driver
+  ([ADR 0005](docs/adr/0005-own-led-driver.md)); the display owns SPI3.
+- Seeed_GFX sends one pixel per SPI call; the Blade view bypasses it with
+  one burst per bar (~21 ms per screen).
+- The S3 has no double-precision FPU and no float divide: keep `double`,
+  division, `std::floor` and function-local statics out of per-sample code
+  (together they cost 2x in rendering).
+- Only GPIO1-20 can read analog, and all of those are taken on this carrier
+  except the board's own JST LiPo divider (GPIO10). Pack sensing for the 2 m
+  build needs a 1S pack on the JST or an I2C fuel gauge.
+- Real gyro noise is ~0.03 rad/s sample to sample; Rest detection works on
+  smoothed readings (see `test/data/bench-desk-20s.csv`).
+
+Still to check: IMU axis directions vs. the Blade (`imuAxes`), and on a real
+strip: LED colors, signal quality at 8-12 MHz through the level shifter, and
+current draw.

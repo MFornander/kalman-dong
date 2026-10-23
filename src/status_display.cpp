@@ -5,6 +5,7 @@
 #include <cmath>
 
 #include "board/boards/XIAO_LCD_Board.h"
+#include "bus/Bus_SPI.h"
 #include "driver/tft/Driver_ST7789.h"
 #include "panel/Panel_TFT.h"
 
@@ -37,9 +38,12 @@ Page page = Page::Off;
 uint32_t statusUntilMs = 0;
 uint16_t rowPixels[kBladeWidth * kRowHeight];
 uint8_t gammaLut[256];
+uint32_t textUs = 0, barsUs = 0;
+char shownHeader[48] = "";
 
 void showPage(Page next) {
     if (next == page) return;
+    shownHeader[0] = '\0';
     if (next == Page::Off) {
         display.panel().setBacklight(0);
         display.panel().sleep();
@@ -96,22 +100,35 @@ uint16_t toPanel(const kd::Rgb8& c) {
 }
 
 void drawBlade(const Status& s, const kd::Rgb8* lines, size_t lineCount, size_t ppl) {
+    // This library draws text a pixel at a time; only redraw when it changes.
     char buf[48];
-    display.setTextSize(1);
-    display.setTextDatum(TL_DATUM);
-    display.setTextColor(TFT_WHITE, TFT_BLACK);
-    display.setTextPadding(kBladeWidth);
-    snprintf(buf, sizeof(buf), "%-8s %3.0f fps %3.0f Hz %s%s", kd::palette(s.settings.palette).name, s.fps, s.imuHz,
-             s.atRest ? "rest" : "", s.recording ? " REC" : "");
-    display.drawString(buf, 2, 5);
+    uint32_t t0 = micros();
+    snprintf(buf, sizeof(buf), "%s  %s %s", kd::palette(s.settings.palette).name, s.atRest ? "rest" : "",
+             s.recording ? "REC" : "");
+    if (strcmp(buf, shownHeader) != 0) {
+        strcpy(shownHeader, buf);
+        display.setTextSize(1);
+        display.setTextDatum(TL_DATUM);
+        display.setTextColor(TFT_WHITE, TFT_BLACK);
+        display.setTextPadding(kBladeWidth);
+        display.drawString(buf, 2, 5);
+    }
+    uint32_t t1 = micros();
+    textUs = t1 - t0;
 
     if (ppl == 0) return;
+    SPIClass* spi = static_cast<Bus_SPI&>(display.panel().driver().bus()).spiInstance();
     for (size_t line = 0; line < lineCount; ++line) {
         const kd::Rgb8* px = lines + line * ppl;
         for (int x = 0; x < kBladeWidth; ++x) rowPixels[x] = toPanel(px[size_t(x) * ppl / kBladeWidth]);
         for (int y = 1; y < kRowHeight; ++y) memcpy(rowPixels + y * kBladeWidth, rowPixels, kBladeWidth * 2);
-        display.pushImage(0, kHeaderHeight + int(line) * (kRowHeight + kRowGap), kBladeWidth, kRowHeight, rowPixels);
+        // pushImage() sends one pixel per SPI call; send the bar in one burst.
+        display.startWrite();
+        display.setAddrWindow(0, kHeaderHeight + int(line) * (kRowHeight + kRowGap), kBladeWidth, kRowHeight);
+        spi->writePixels(rowPixels, sizeof(rowPixels));
+        display.endWrite();
     }
+    barsUs = micros() - t1;
 }
 
 }  // namespace
@@ -120,7 +137,6 @@ bool begin() {
     for (int i = 0; i < 256; ++i) gammaLut[i] = static_cast<uint8_t>(std::pow(i / 255.f, 1.f / 2.2f) * 255.f + 0.5f);
     ready = display.begin<Board_XIAO_1inch14_LCD<kLcdRst, kLcdBacklight>, Config_Seeed_1inch14_LCD_ST7789>();
     if (!ready) return false;
-    display.setSwapBytes(true);
     display.fillScreen(TFT_BLACK);
     display.panel().setBacklight(0);
     page = Page::Off;
@@ -128,6 +144,10 @@ bool begin() {
 }
 
 void setBladeView(bool on) { bladeViewOn = on; }
+void drawTimes(uint32_t& text, uint32_t& bars) {
+    text = textUs;
+    bars = barsUs;
+}
 bool bladeView() { return bladeViewOn; }
 
 void wake(const Status& status, uint32_t nowMs) {

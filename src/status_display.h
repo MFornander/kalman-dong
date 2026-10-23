@@ -32,6 +32,9 @@ bool begin();
 void setBladeView(bool on);
 bool bladeView();
 
+// Microseconds the last Blade view spent drawing its header text and bars.
+void drawTimes(uint32_t& textUs, uint32_t& barsUs);
+
 // Shows the Status page for kAwakeMs.
 void wake(const Status& status, uint32_t nowMs);
 
