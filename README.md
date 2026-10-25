@@ -98,6 +98,17 @@ on the left, tip on the right, Line 0 on top) exactly as they would go to the
 Pixels, after brightness and the Power Budget. The board stands in for the
 Hilt; the right edge of the screen is the direction the Blade points.
 
+The quickest route is the guided bring-up script: it flashes, checks rates
+and filter costs, runs Mounting Calibration and verifies it, records swings
+and replays them through both filters, printing PASS/FAIL as it goes.
+
+```bash
+uv run tools/bringup.py all
+```
+
+Steps can also run one at a time (`check`, `mount`, `record NAME`,
+`compare`); see `uv run tools/bringup.py --help`. Manually:
+
 ```bash
 pio run -e xiao_screen -t upload
 ```
@@ -106,7 +117,7 @@ pio run -e xiao_screen -t upload
 pio device monitor -e xiao_screen
 ```
 
-Serial commands: `i` status plus per-stage frame and display timings, `c`
+Serial commands: `i` status plus per-stage frame, IMU and display timings, `c`
 start Mounting Calibration, `f` switch orientation filter (Mahony / Kalman),
 `a` toggle axis check (5 Hz), `b` Cloud Field micro-benchmark, `v` toggle the
 Blade view, `R`/`S` start/stop raw IMU streaming.
@@ -176,6 +187,9 @@ mid-swing and somewhat better through big swings, and is slightly worse
 under hand jitter (`pio test -e native -f test_motion -v` prints the
 comparison). Pick the default from real swing recordings.
 
-Still to check: Mounting Calibration on the board, the Kalman filter's CPU
-cost at 817 Hz, and on a real strip: LED colors, signal quality at 8-12 MHz
-through the level shifter, and current draw.
+IMU cost per sample on the board (budget 1224 us at 817 Hz): I2C read ~550
+us, tracking ~100 us with Mahony and ~200 us with Kalman.
+
+Still to check: Mounting Calibration with real poses, swing recordings to
+choose the default filter, and on a real strip: LED colors, signal quality at
+8-12 MHz through the level shifter, and current draw.

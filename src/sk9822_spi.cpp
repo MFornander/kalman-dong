@@ -10,12 +10,12 @@
 
 #include <cstring>
 
+#include "kd/sk9822.h"
+
 namespace {
 
 constexpr spi_host_device_t kHost = SPI2_HOST;
 constexpr size_t kMaxTransferBytes = 32 * 1024;  // one S3 SPI DMA transaction
-constexpr size_t kStartBytes = 4;
-constexpr uint8_t kFullGlobalBrightness = 0xE0 | 31;
 
 spi_device_handle_t device;
 spi_transaction_t transactions[kd::kMaxStrands];
@@ -38,21 +38,15 @@ void IRAM_ATTR routeToStrand(spi_transaction_t* t) {
     }
 }
 
-size_t frameBytes(size_t pixels) {
-    // Start frame, 4 bytes per Pixel, then enough zero clocks to push the
-    // data through every Pixel (n/2 bits) plus SK9822's 32-bit reset frame.
-    return kStartBytes + 4 * pixels + (pixels + 15) / 16 + 4;
-}
-
 }  // namespace
 
 bool Sk9822Spi::begin(const Strand* strands, size_t count, uint32_t clockHz, const char* wireOrder) {
-    if (count < 1 || count > kd::kMaxStrands) return false;
+    if (count < 1 || count > kd::kMaxStrands || !kd::WireOrder::parse(wireOrder, order_)) return false;
     count_ = count;
     size_t largest = 0;
     for (size_t s = 0; s < count; ++s) {
         strands_[s] = strands[s];
-        size_t bytes = frameBytes(strands[s].length);
+        size_t bytes = kd::sk9822FrameBytes(strands[s].length);
         if (bytes > kMaxTransferBytes) return false;
         largest = bytes > largest ? bytes : largest;
         for (Buffer* set : {buffers_[0], buffers_[1]}) {
@@ -62,12 +56,8 @@ bool Sk9822Spi::begin(const Strand* strands, size_t count, uint32_t clockHz, con
         }
     }
     size_t totalBytes = 0;
-    for (size_t s = 0; s < count; ++s) totalBytes += frameBytes(strands[s].length);
+    for (size_t s = 0; s < count; ++s) totalBytes += kd::sk9822FrameBytes(strands[s].length);
     sendUs_ = static_cast<uint32_t>(totalBytes * 8ull * 1000000ull / clockHz);
-    for (int i = 0; i < 3; ++i) {
-        const char c = wireOrder[i];
-        order_[i] = c == 'R' ? 0 : (c == 'G' ? 1 : 2);
-    }
 
     // Park every pin low first; the bus then claims Strand 0's pins.
     for (size_t s = 0; s < count; ++s) {
@@ -101,20 +91,9 @@ bool Sk9822Spi::begin(const Strand* strands, size_t count, uint32_t clockHz, con
     return spi_bus_add_device(kHost, &dev, &device) == ESP_OK;
 }
 
-void Sk9822Spi::encode(size_t strand, const kd::Rgb8* px, Buffer& out) const {
-    uint8_t* p = out.bytes + kStartBytes;  // start frame and end frame stay zero
-    for (size_t i = 0; i < strands_[strand].length; ++i) {
-        const uint8_t rgb[3] = {px[i].r, px[i].g, px[i].b};
-        *p++ = kFullGlobalBrightness;
-        *p++ = rgb[order_[0]];
-        *p++ = rgb[order_[1]];
-        *p++ = rgb[order_[2]];
-    }
-}
-
 void Sk9822Spi::show(const kd::Rgb8* const* pixels) {
     Buffer* set = buffers_[back_];
-    for (size_t s = 0; s < count_; ++s) encode(s, pixels[s], set[s]);
+    for (size_t s = 0; s < count_; ++s) kd::sk9822Encode(pixels[s], strands_[s].length, order_, set[s].bytes);
 
     const uint32_t waitStart = micros();
     for (; inFlight_ > 0; --inFlight_) {

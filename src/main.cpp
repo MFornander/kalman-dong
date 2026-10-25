@@ -51,6 +51,8 @@ SemaphoreHandle_t imuSignal;
 ImuLsm6 imu;
 bool imuOk = false;
 volatile float imuHz = 0.f;
+volatile float imuReadUs = 0.f;   // smoothed I2C read time per sample
+volatile float imuTrackUs = 0.f;  // smoothed tracker + filter time per sample
 
 // USB recording of raw IMU samples (tools/capture_imu.py).
 struct RecordedSample {
@@ -107,12 +109,15 @@ void imuTask(void*) {
     uint32_t windowCount = 0;
     for (;;) {
         // The data-ready interrupt normally wakes us; the timeout covers a
-        // missed edge.
-        xSemaphoreTake(imuSignal, pdMS_TO_TICKS(3));
-        if (!imu.dataReady()) continue;
+        // missed edge, and only then is it worth asking the IMU (an extra
+        // I2C transaction) whether data is ready.
+        const bool signalled = xSemaphoreTake(imuSignal, pdMS_TO_TICKS(3)) == pdTRUE;
+        const int64_t readStart = esp_timer_get_time();
+        if (!signalled && !imu.dataReady()) continue;
         ImuLsm6::Reading r;
         if (!imu.read(r)) continue;
         int64_t now = esp_timer_get_time();
+        imuReadUs = imuReadUs + (float(now - readStart) - imuReadUs) * 0.02f;
 
         kd::ImuSample s;
         s.dt = (now - last) * 1e-6f;
@@ -124,6 +129,7 @@ void imuTask(void*) {
         tracker.update(s);
         if (calibration.active()) calibration.update(r.gyro, r.accel, s.dt);
         xSemaphoreGive(trackerLock);
+        imuTrackUs = imuTrackUs + (float(esp_timer_get_time() - now) - imuTrackUs) * 0.02f;
 
         portENTER_CRITICAL(&readingMux);
         lastReading = r;
@@ -253,6 +259,8 @@ void handleSerial() {
                     "ignited %d rest %.1fs\n",
                     timing.render, timing.limit, timing.show, (unsigned long)leds.lastWaitUs(),
                     (unsigned long)leds.sendUs(), timing.total, tracker.ignited(), tracker.restSeconds());
+                Serial.printf("# imu us: read %.0f track %.0f (filter %s)\n", imuReadUs, imuTrackUs,
+                              tracker.filter().name());
                 {
                     uint32_t textUs, barsUs;
                     status_display::drawTimes(textUs, barsUs);
@@ -454,7 +462,10 @@ void loop() {
             else
                 snprintf(banner, sizeof(banner), "%s", calibration.instruction());
             bannerUntilMs = nowMs + 3000;
-            if (strcmp(banner, status.banner) != 0) wakeDisplay = !status_display::bladeView();
+            if (strcmp(banner, status.banner) != 0) {
+                wakeDisplay = !status_display::bladeView();
+                Serial.printf("# banner: %s\n", banner);
+            }
         }
         if (finished) {
             if (step == kd::MountingCalibration::Step::Done) {

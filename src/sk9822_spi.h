@@ -12,6 +12,7 @@
 
 #include "kd/color.h"
 #include "kd/dong_profile.h"
+#include "kd/sk9822.h"
 
 class Sk9822Spi {
 public:
@@ -22,6 +23,7 @@ public:
     };
 
     // `wireOrder` names the color byte order on the wire, e.g. "BGR".
+    // Framing lives in kd/sk9822.h; this class only moves the bytes.
     bool begin(const Strand* strands, size_t count, uint32_t clockHz, const char* wireOrder);
 
     // Encodes `pixels[s]` for every Strand, waits for the previous frame to
@@ -40,14 +42,12 @@ private:
         size_t size = 0;
     };
 
-    void encode(size_t strand, const kd::Rgb8* px, Buffer& out) const;
-
     size_t count_ = 0;
     Strand strands_[kd::kMaxStrands] = {};
     Buffer buffers_[2][kd::kMaxStrands];
     int back_ = 0;
     size_t inFlight_ = 0;
-    uint8_t order_[3] = {2, 1, 0};  // index into {r, g, b} for each wire byte
+    kd::WireOrder order_;
     uint32_t lastWaitUs_ = 0;
     uint32_t sendUs_ = 0;
 };

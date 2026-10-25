@@ -31,24 +31,17 @@ def find_port() -> str:
     sys.exit("No Dong found on USB; pass --port")
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("name", help="recording name, e.g. swing-figure8")
-    ap.add_argument("--seconds", type=float, default=30.0)
-    ap.add_argument("--port")
-    args = ap.parse_args()
-
-    out = DATA_DIR / f"{args.name}.csv"
+def record(port_path: str, seconds: float, out: pathlib.Path) -> int:
+    """Records `seconds` of samples to `out`; returns the sample count."""
     if out.exists():
         sys.exit(f"{out} already exists")
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    out.parent.mkdir(parents=True, exist_ok=True)
 
-    with serial.Serial(args.port or find_port(), 921600, timeout=0.5) as port:
+    with serial.Serial(port_path, 921600, timeout=0.5) as port:
         port.reset_input_buffer()
         port.write(b"R")
         lines, header_seen = [], False
-        end = time.monotonic() + args.seconds
-        print(f"Recording {args.seconds:.0f} s -- swing away.")
+        end = time.monotonic() + seconds
         while time.monotonic() < end:
             raw = port.readline().decode("ascii", errors="replace").strip()
             if not raw:
@@ -63,6 +56,19 @@ def main() -> None:
     if not header_seen or rows == 0:
         sys.exit("No samples received (is the firmware running and the IMU found?)")
     out.write_text("\n".join(lines) + "\n")
+    return rows
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("name", help="recording name, e.g. swing-figure8")
+    ap.add_argument("--seconds", type=float, default=30.0)
+    ap.add_argument("--port")
+    args = ap.parse_args()
+
+    out = DATA_DIR / f"{args.name}.csv"
+    print(f"Recording {args.seconds:.0f} s -- swing away.")
+    rows = record(args.port or find_port(), args.seconds, out)
     print(f"Wrote {rows} samples ({rows / args.seconds:.0f} Hz) to {out}")
 
 
