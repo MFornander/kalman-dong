@@ -110,3 +110,35 @@ TEST_CASE("settings loaded from flash are forced into range") {
     CHECK(s.girthValue() <= 0.6f);
     CHECK(s.clearSkyValue() <= 0.5f);
 }
+
+TEST_CASE("holding A and C together starts Mounting Calibration, and nothing else") {
+    Hand h;
+    Settings before = h.settings;
+    ControlEvent fired;
+    int calibrations = 0;
+    for (uint32_t t = 0; t < 2500; t += 5) {
+        ControlEvent e = h.controls.update(true, false, true, h.now += 5);
+        if (e.kind != ControlEvent::Kind::None) fired = e;
+        calibrations += e.kind == ControlEvent::Kind::CalibrateMounting;
+    }
+    for (int i = 0; i < 20; ++i) {
+        ControlEvent e = h.controls.update(false, false, false, h.now += 5);
+        if (e.kind != ControlEvent::Kind::None) fired = e;
+    }
+    CHECK(fired.kind == ControlEvent::Kind::CalibrateMounting);
+    CHECK(calibrations == 1);
+    CHECK(h.settings == before);  // no Palette, Clear Sky or Re-level on the way
+}
+
+TEST_CASE("pressing C shortly after A still makes the combo") {
+    Hand h;
+    Settings before = h.settings;
+    ControlEvent fired;
+    for (uint32_t t = 0; t < 2500; t += 5) {
+        ControlEvent e = h.controls.update(true, false, t >= 300, h.now += 5);
+        if (e.kind != ControlEvent::Kind::None) fired = e;
+    }
+    for (int i = 0; i < 20; ++i) h.controls.update(false, false, false, h.now += 5);
+    CHECK(fired.kind == ControlEvent::Kind::CalibrateMounting);
+    CHECK(h.settings == before);
+}

@@ -21,6 +21,7 @@ struct Status {
     float imuHz = 0.f;
     bool atRest = false;
     bool recording = false;
+    char banner[40] = "";  // e.g. Mounting Calibration instructions; shown prominently
 };
 
 namespace status_display {

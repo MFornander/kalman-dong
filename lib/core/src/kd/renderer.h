@@ -13,6 +13,13 @@
 
 namespace kd {
 
+// What Mounting Calibration asks the wielder to do, drawn instead of the clouds.
+struct CalibrationView {
+    bool active = false;
+    uint8_t step = 0;     // 0: tip straight up, 1: Line 0 to the sky
+    float progress = 0;   // 0..1 through holding the current pose
+};
+
 struct FrameInput {
     double showTime = 0;           // Show Clock, s
     double localTime = 0;          // this Dong's own uptime, s
@@ -21,6 +28,7 @@ struct FrameInput {
     float sinceIgnition = 1e9f;    // s since Ignition finished
     float restSeconds = 0.f;       // s at Rest; 0 while moving
     float batteryFraction = -1.f;  // 0..1, negative if unknown
+    CalibrationView calibration;
 };
 
 class Renderer {
@@ -43,6 +51,7 @@ public:
 
 private:
     Rgbf ignitionColor(float along, float front, const Palette& pal, float hum) const;
+    static Rgbf calibrationColor(const CalibrationView& cal, size_t line, float along);
     void renderSlice(const CloudField::Instant& clouds, const Pose& pose, const Palette& pal, size_t line,
                      float girth);
 

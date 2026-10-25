@@ -44,4 +44,19 @@ void saveGyroBias(const kd::Vec3& bias) {
     prefs.putBytes("bias", b, sizeof(b));
 }
 
+bool loadMounting(kd::Quat& sensorToBody) {
+    float q[4];
+    if (prefs.getBytesLength("mounting") != sizeof(q)) return false;
+    prefs.getBytes("mounting", q, sizeof(q));
+    float n = q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3];
+    if (!(n > 0.9f && n < 1.1f)) return false;  // garbage or NaN
+    sensorToBody = kd::Quat{q[0], q[1], q[2], q[3]}.normalized();
+    return true;
+}
+
+void saveMounting(const kd::Quat& sensorToBody) {
+    float q[4] = {sensorToBody.w, sensorToBody.x, sensorToBody.y, sensorToBody.z};
+    prefs.putBytes("mounting", q, sizeof(q));
+}
+
 }  // namespace store

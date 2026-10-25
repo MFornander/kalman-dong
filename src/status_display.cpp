@@ -75,6 +75,9 @@ void drawStatus(const Status& s) {
     statusLine(2, buf, s.changed == Setting::Girth);
     snprintf(buf, sizeof(buf), "Sky %3d%%", int(s.settings.clearSkyValue() * 100 + 0.5f));
     statusLine(3, buf, s.changed == Setting::ClearSky);
+    display.setTextSize(1);
+    statusLine(4, s.banner, true);
+    display.setTextSize(2);
 
     if (s.batteryFraction >= 0.f)
         snprintf(buf, sizeof(buf), "Batt %3d%%", int(s.batteryFraction * 100 + 0.5f));
@@ -103,8 +106,11 @@ void drawBlade(const Status& s, const kd::Rgb8* lines, size_t lineCount, size_t 
     // This library draws text a pixel at a time; only redraw when it changes.
     char buf[48];
     uint32_t t0 = micros();
-    snprintf(buf, sizeof(buf), "%s  %s %s", kd::palette(s.settings.palette).name, s.atRest ? "rest" : "",
-             s.recording ? "REC" : "");
+    if (s.banner[0])
+        snprintf(buf, sizeof(buf), "%s", s.banner);
+    else
+        snprintf(buf, sizeof(buf), "%s  %s %s", kd::palette(s.settings.palette).name, s.atRest ? "rest" : "",
+                 s.recording ? "REC" : "");
     if (strcmp(buf, shownHeader) != 0) {
         strcpy(shownHeader, buf);
         display.setTextSize(1);

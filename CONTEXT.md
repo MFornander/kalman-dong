@@ -26,6 +26,10 @@ _Avoid_: Strand view, strip, side
 One physical chain of Pixels driven from one output of the controller. A Strand may fold back and forth to form several Lines.
 _Avoid_: Strip, chain, output
 
+**Mounting**:
+How the IMU sits relative to the Blade; learned once per build by Mounting Calibration (tip up, then Line 0 to the sky) and kept across power cycles.
+_Avoid_: Axis map, IMU orientation, calibration (on its own)
+
 **Pixel**:
 One addressable LED.
 _Avoid_: LED (when meaning a position on the Blade)

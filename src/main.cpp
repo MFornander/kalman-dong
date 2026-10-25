@@ -14,6 +14,7 @@
 #include "kd/controls.h"
 #include "imu_lsm6.h"
 #include "kd/motion_tracker.h"
+#include "kd/mounting.h"
 #include "kd/noise.h"
 #include "kd/orientation_filter.h"
 #include "kd/power_governor.h"
@@ -42,8 +43,9 @@ constexpr uint32_t kBatteryPeriodMs = 500;
 const kd::DongProfile& profile = dongProfile();
 
 // Motion: written by the IMU task, read by the render loop, under trackerLock.
-kd::MahonyFilter filter;
-kd::MotionTracker tracker(filter);
+kd::MahonyFilter mahony;
+kd::KalmanFilter kalman;
+kd::MotionTracker tracker(mahony);
 SemaphoreHandle_t trackerLock;
 SemaphoreHandle_t imuSignal;
 ImuLsm6 imu;
@@ -86,11 +88,12 @@ portMUX_TYPE readingMux = portMUX_INITIALIZER_UNLOCKED;
 ImuLsm6::Reading lastReading;
 bool printAxes = false;
 
-kd::Vec3 toBody(const kd::Vec3& sensor) {
-    const float v[3] = {sensor.x, sensor.y, sensor.z};
-    const kd::BodyAxisMap& m = profile.imuAxes;
-    return {m.sign[0] * v[m.source[0]], m.sign[1] * v[m.source[1]], m.sign[2] * v[m.source[2]]};
-}
+// Mounting (sensor -> body) and its calibration; both used by the IMU task
+// and changed only under trackerLock.
+kd::Quat mounting;
+kd::MountingCalibration calibration;
+
+kd::Vec3 toBody(const kd::Vec3& sensor) { return mounting.rotate(sensor); }
 
 void IRAM_ATTR onImuInterrupt() {
     BaseType_t woken = pdFALSE;
@@ -119,6 +122,7 @@ void imuTask(void*) {
 
         xSemaphoreTake(trackerLock, portMAX_DELAY);
         tracker.update(s);
+        if (calibration.active()) calibration.update(r.gyro, r.accel, s.dt);
         xSemaphoreGive(trackerLock);
 
         portENTER_CRITICAL(&readingMux);
@@ -174,6 +178,21 @@ bool addStrands() {
     return true;
 }
 
+void startCalibration() {
+    xSemaphoreTake(trackerLock, portMAX_DELAY);
+    calibration.begin();
+    xSemaphoreGive(trackerLock);
+    Serial.println("# Mounting Calibration: hold the tip straight up, then Line 0 to the sky");
+}
+
+// Call with trackerLock held. The gyro bias is kept across the change by
+// carrying it through the sensor frame; Ignition then runs again.
+void applyMounting(const kd::Quat& next) {
+    kd::Vec3 sensorBias = mounting.conj().rotate(tracker.gyroBias());
+    mounting = next;
+    tracker.begin(mounting.rotate(sensorBias));
+}
+
 void handleSerial() {
     while (Serial.available()) {
         switch (Serial.read()) {
@@ -195,6 +214,14 @@ void handleSerial() {
             case 'a':
                 printAxes = !printAxes;
                 break;
+            case 'f': {  // A/B the orientation filters
+                xSemaphoreTake(trackerLock, portMAX_DELAY);
+                bool toKalman = &tracker.filter() == &mahony;
+                tracker.setFilter(toKalman ? static_cast<kd::OrientationFilter&>(kalman) : mahony);
+                xSemaphoreGive(trackerLock);
+                Serial.printf("# filter %s\n", tracker.filter().name());
+                break;
+            }
             case 'b': {  // micro-benchmark of the Cloud Field's building blocks
                 volatile float sink = 0;
                 int64_t t0 = esp_timer_get_time();
@@ -214,10 +241,13 @@ void handleSerial() {
                               (t5 - t4) / 2000.f);
                 break;
             }
+            case 'c':
+                startCalibration();
+                break;
             case 'i':
-                Serial.printf("# profile=%s chip=%s imu=%.0fHz fps=%.0f bias=%.4f,%.4f,%.4f\n", profile.name,
-                              imu.chipName(), imuHz, status.fps, tracker.gyroBias().x, tracker.gyroBias().y,
-                              tracker.gyroBias().z);
+                Serial.printf("# profile=%s chip=%s filter=%s imu=%.0fHz fps=%.0f bias=%.4f,%.4f,%.4f\n",
+                              profile.name, imu.chipName(), tracker.filter().name(), imuHz, status.fps,
+                              tracker.gyroBias().x, tracker.gyroBias().y, tracker.gyroBias().z);
                 Serial.printf(
                     "# frame us: render %.0f limit+scatter %.0f show %.0f (waited %lu, sends %lu) total %.0f | "
                     "ignited %d rest %.1fs\n",
@@ -325,7 +355,9 @@ void setup() {
         if (attempt) delay(20);
         imuOk = imu.begin(Wire);
     }
-    tracker.begin(store::loadGyroBias());
+    if (!store::loadMounting(mounting) && !kd::mountingFromAxisMap(profile.imuAxes, mounting))
+        Serial.println("Dong Profile imuAxes is not a rotation; using sensor axes as-is");
+    tracker.begin(mounting.rotate(store::loadGyroBias()));
     if (imuOk) {
         pinMode(kImuInt1, INPUT);
         attachInterrupt(kImuInt1, onImuInterrupt, RISING);
@@ -355,6 +387,9 @@ void loop() {
     static uint32_t lastBiasSaveMs = 0;
     static kd::Setting lastChanged = kd::Setting::None;
     static uint32_t lastAxisPrintMs = 0;
+    static bool calibrating = false;
+    static char banner[sizeof(Status::banner)] = "";
+    static uint32_t bannerUntilMs = 0;
 
     const int64_t frameStartUs = esp_timer_get_time();
     const uint32_t nowMs = millis();
@@ -374,6 +409,7 @@ void loop() {
             tracker.relevel();
             xSemaphoreGive(trackerLock);
         }
+        if (e.kind == kd::ControlEvent::Kind::CalibrateMounting) startCalibration();
         wakeDisplay = true;
     }
     if (controls.shouldSave(nowMs)) {
@@ -400,12 +436,42 @@ void loop() {
         bool ignited = tracker.ignited();
         unsigned biasGeneration = tracker.biasGeneration();
         kd::Vec3 bias = tracker.gyroBias();
+
+        // Mounting Calibration: guide on the Pixels, apply when finished.
+        const kd::MountingCalibration::Step step = calibration.step();
+        in.calibration.active = calibration.active();
+        in.calibration.step = step == kd::MountingCalibration::Step::LineZeroUp ? 1 : 0;
+        in.calibration.progress = calibration.holdProgress();
+        const bool finished = calibrating && !calibration.active();
+        if (finished && step == kd::MountingCalibration::Step::Done) applyMounting(calibration.sensorToBody());
+        const kd::Quat mountingNow = mounting;
         xSemaphoreGive(trackerLock);
+
+        if (in.calibration.active || finished) {
+            if (in.calibration.active)
+                snprintf(banner, sizeof(banner), "%s %3d%%", calibration.instruction(),
+                         int(in.calibration.progress * 100.f) / 10 * 10);
+            else
+                snprintf(banner, sizeof(banner), "%s", calibration.instruction());
+            bannerUntilMs = nowMs + 3000;
+            if (strcmp(banner, status.banner) != 0) wakeDisplay = !status_display::bladeView();
+        }
+        if (finished) {
+            if (step == kd::MountingCalibration::Step::Done) {
+                store::saveMounting(mountingNow);
+                ignitedAtUs = -1;
+                Serial.printf("# Mounting saved: %.4f %.4f %.4f %.4f\n", mountingNow.w, mountingNow.x,
+                              mountingNow.y, mountingNow.z);
+            } else {
+                Serial.printf("# Mounting Calibration failed: %s\n", calibration.failure());
+            }
+        }
+        calibrating = in.calibration.active;
 
         if (ignited && ignitedAtUs < 0) ignitedAtUs = frameStartUs;
         if (biasGeneration != savedBiasGeneration &&
             (savedBiasGeneration == 0 || nowMs - lastBiasSaveMs >= kBiasSaveIntervalMs)) {
-            store::saveGyroBias(bias);
+            store::saveGyroBias(mounting.conj().rotate(bias));
             savedBiasGeneration = biasGeneration;
             lastBiasSaveMs = nowMs;
         }
@@ -443,6 +509,8 @@ void loop() {
     status.imuHz = imuHz;
     status.atRest = atRest;
     status.recording = recording;
+    if (static_cast<int32_t>(nowMs - bannerUntilMs) >= 0) banner[0] = '\0';
+    memcpy(status.banner, banner, sizeof(status.banner));
     portEXIT_CRITICAL(&statusMux);
 
     if (frameUs < kMinFrameUs) delayMicroseconds(kMinFrameUs - frameUs);

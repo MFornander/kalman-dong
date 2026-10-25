@@ -38,7 +38,7 @@ inline const kd::DongProfile& dongProfile() {
 #ifdef DONG_PROFILE_SCREEN
         p.name = "screen";
         // Body +X = screen right, +Y = screen top, +Z = out of the screen.
-        // Fill in from the serial 'a' axis check (see README).
+        // A guess until Mounting Calibration (A + C) is run on the board.
         p.imuAxes = {{0, 1, 2}, {1, 1, 1}};
 #endif
         return p;

@@ -68,6 +68,27 @@ struct Quat {
         return fromAxisAngle(v * (1.f / angle), angle);
     }
 
+    // The rotation with rotate(v) == m * v for a proper rotation matrix m
+    // (row-major: m[row][col]).
+    static Quat fromRotationMatrix(const float m[3][3]) {
+        float trace = m[0][0] + m[1][1] + m[2][2];
+        Quat q;
+        if (trace > 0.f) {
+            float s = std::sqrt(trace + 1.f) * 2.f;
+            q = {0.25f * s, (m[2][1] - m[1][2]) / s, (m[0][2] - m[2][0]) / s, (m[1][0] - m[0][1]) / s};
+        } else if (m[0][0] > m[1][1] && m[0][0] > m[2][2]) {
+            float s = std::sqrt(1.f + m[0][0] - m[1][1] - m[2][2]) * 2.f;
+            q = {(m[2][1] - m[1][2]) / s, 0.25f * s, (m[0][1] + m[1][0]) / s, (m[0][2] + m[2][0]) / s};
+        } else if (m[1][1] > m[2][2]) {
+            float s = std::sqrt(1.f + m[1][1] - m[0][0] - m[2][2]) * 2.f;
+            q = {(m[0][2] - m[2][0]) / s, (m[0][1] + m[1][0]) / s, 0.25f * s, (m[1][2] + m[2][1]) / s};
+        } else {
+            float s = std::sqrt(1.f + m[2][2] - m[0][0] - m[1][1]) * 2.f;
+            q = {(m[1][0] - m[0][1]) / s, (m[0][2] + m[2][0]) / s, (m[1][2] + m[2][1]) / s, 0.25f * s};
+        }
+        return q.normalized();
+    }
+
     // Shortest rotation taking unit vector `from` onto unit vector `to`.
     static Quat fromTo(const Vec3& from, const Vec3& to) {
         Vec3 f = from.normalized(), t = to.normalized();

@@ -8,6 +8,7 @@
 #include "blade_geometry.h"
 #include "kd_math.h"
 #include "orientation_filter.h"
+#include "stillness.h"
 
 namespace kd {
 
@@ -52,8 +53,8 @@ public:
     float ignitionProgress() const { return ignitionProgress_; }
     bool ignited() const { return ignited_; }
 
-    bool atRest() const { return stillTime_ >= settings_.restHold; }
-    float restSeconds() const { return atRest() ? stillTime_ - settings_.restHold : 0.f; }
+    bool atRest() const { return stillness_.stillTime() >= settings_.restHold; }
+    float restSeconds() const { return atRest() ? stillness_.stillTime() - settings_.restHold : 0.f; }
 
     // Make the current heading the Cloud Field's reference heading.
     void relevel();
@@ -65,14 +66,17 @@ public:
     // Increments whenever the bias is re-learned, so callers know to save it.
     unsigned biasGeneration() const { return biasGeneration_; }
 
-    const OrientationFilter& filter() const { return filter_; }
+    const OrientationFilter& filter() const { return *filter_; }
+
+    // Swaps in another orientation filter, handing over the current
+    // orientation so the Cloud Field doesn't jump.
+    void setFilter(OrientationFilter& filter);
 
 private:
     void ignite(const Vec3& accel);
-    void updateStillness(const ImuSample& s);
     void updatePush(const Vec3& accel, float dt);
 
-    OrientationFilter& filter_;
+    OrientationFilter* filter_;
     MotionSettings settings_;
 
     bool ignited_ = false;
@@ -82,16 +86,7 @@ private:
     Vec3 bias_;
     unsigned biasGeneration_ = 0;
 
-    // Stillness: short-term means and how long readings stayed near them.
-    bool haveMeans_ = false;
-    Vec3 gyroFast_;
-    Vec3 accelFast_;
-    Vec3 gyroMean_;
-    Vec3 accelMean_;
-    float stillTime_ = 0;
-    Vec3 stillGyroSum_;
-    Vec3 stillAccelSum_;
-    float stillWeight_ = 0;
+    Stillness stillness_;
     float learnedThisRest_ = 0;  // s of bias learning in the current Rest
 
     Quat reference_;     // heading reference set by Re-level

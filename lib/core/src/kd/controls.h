@@ -3,6 +3,7 @@
 //   A short: next Palette          A long: step Clear Sky
 //   B short: step brightness       B long: step Girth
 //   C short: wake the display      C long: Re-level
+//   A + C held together: Mounting Calibration
 #pragma once
 
 #include <cstdint>
@@ -42,6 +43,11 @@ public:
 
     Press update(bool down, uint32_t nowMs);
 
+    bool isDown() const { return stable_; }
+
+    // Swallows the current press: no Short or Long until it is released.
+    void cancel() { longFired_ = true; }
+
 private:
     bool stable_ = false;
     bool raw_ = false;
@@ -53,7 +59,7 @@ private:
 enum class Setting : uint8_t { None, Palette, ClearSky, Brightness, Girth };
 
 struct ControlEvent {
-    enum class Kind : uint8_t { None, Changed, WakeDisplay, Relevel };
+    enum class Kind : uint8_t { None, Changed, WakeDisplay, Relevel, CalibrateMounting };
     Kind kind = Kind::None;
     Setting changed = Setting::None;
 };
@@ -61,6 +67,7 @@ struct ControlEvent {
 class Controls {
 public:
     static constexpr uint32_t kSaveQuietMs = 3000;
+    static constexpr uint32_t kComboMs = 1500;  // A + C held this long
 
     explicit Controls(Settings& settings) : settings_(settings) {}
 
@@ -78,6 +85,9 @@ private:
     ButtonTracker buttons_[3];
     bool dirty_ = false;
     uint32_t lastChangeMs_ = 0;
+    bool comboHeld_ = false;
+    bool comboFired_ = false;
+    uint32_t comboSinceMs_ = 0;
 };
 
 }  // namespace kd

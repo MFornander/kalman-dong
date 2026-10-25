@@ -187,3 +187,25 @@ TEST_CASE("a low battery steps the Power Budget down") {
     CHECK(gov.batteryFraction(p.battery.fullVolts + 0.2f) == 1.f);
     CHECK(gov.batteryFraction(p.battery.emptyVolts) == 0.f);
 }
+
+TEST_CASE("Mounting Calibration shows which way to hold the Dong, and the hold filling up") {
+    Frame f(profile());
+    Settings s;
+    FrameInput in = steady();
+    in.calibration.active = true;
+
+    in.calibration.step = 0;  // tip up: a bright tip on every Line
+    in.calibration.progress = 0.f;
+    f.renderer.render(in, s, f.px.data());
+    for (size_t line = 0; line < 4; ++line) CHECK(f.at(line, 59).r > 4 * f.at(line, 10).r);
+
+    in.calibration.step = 1;  // Line 0 to the sky: only Line 0 lights
+    f.renderer.render(in, s, f.px.data());
+    CHECK(f.lit(0) == 60);
+    CHECK(f.lit(1) + f.lit(2) + f.lit(3) == 0);
+
+    in.calibration.progress = 0.5f;  // green fills from the Hilt
+    f.renderer.render(in, s, f.px.data());
+    CHECK(f.at(0, 5).g > f.at(0, 5).r);
+    CHECK(f.at(0, 55).r == f.at(0, 55).g);
+}

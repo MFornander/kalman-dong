@@ -44,6 +44,7 @@ struct ReplayResult {
     double ignitedAt = 0;
     float worstRestTiltDeg = 0;  // estimated vs measured "up" while at Rest
     bool finite = true;
+    float headingDriftDeg = 0;  // heading change from 1 s after Ignition to the end
 };
 
 ReplayResult replay(const std::vector<Row>& rows, OrientationFilter& filter) {
@@ -51,6 +52,12 @@ ReplayResult replay(const std::vector<Row>& rows, OrientationFilter& filter) {
     tracker.begin({});
     ReplayResult result;
     double t = 0;
+    bool haveHeading = false;
+    float heading0 = 0;
+    auto heading = [](const Quat& q) {
+        Vec3 f = q.rotate({1, 0, 0});
+        return std::atan2(f.y, f.x);
+    };
     for (size_t i = 1; i < rows.size(); ++i) {
         ImuSample s;
         s.dt = static_cast<uint32_t>(rows[i].tUs - rows[i - 1].tUs) * 1e-6f;  // wraps safely
@@ -65,6 +72,15 @@ ReplayResult replay(const std::vector<Row>& rows, OrientationFilter& filter) {
         }
         Pose p = tracker.pose();
         result.finite &= std::isfinite(p.orientation.w) && std::isfinite(p.push.x);
+        if (result.ignited && !haveHeading && t > result.ignitedAt + 1.0) {
+            heading0 = heading(p.orientation);
+            haveHeading = true;
+        }
+        if (haveHeading) {
+            float d = heading(p.orientation) - heading0;
+            d = std::fabs(std::remainder(d, 2.f * kPi));
+            result.headingDriftDeg = radToDeg(d);
+        }
         if (tracker.ignited() && tracker.restSeconds() > 1.f) {
             Vec3 upEstimate = p.orientation.conj().rotate({0, 0, 1});
             float err = radToDeg(std::acos(clampf(upEstimate.dot(s.accel.normalized()), -1.f, 1.f)));
@@ -108,15 +124,20 @@ TEST_CASE("every recording in test/data replays cleanly") {
         CAPTURE(entry.path().filename().string());
         REQUIRE(rows.size() > 833);
         MahonyFilter mahony;
-        ReplayResult r = replay(rows, mahony);
-        CHECK(r.finite);
-        CHECK(r.ignited);
-        CHECK(r.ignitedAt < 2.5);
-        CHECK(r.worstRestTiltDeg < 3.f);
-        // Recordings that start with the Dong lying still must ignite by
-        // learning the gyro bias, not by timing out.
-        if (entry.path().filename().string().rfind("bench-desk", 0) == 0) CHECK(r.learnedBias);
-        MESSAGE(entry.path().filename().string() << ": " << std::string(mahony.name()) << " ignited at " << r.ignitedAt
-                                                 << " s, worst tilt at Rest " << r.worstRestTiltDeg << " deg");
+        KalmanFilter kalman;
+        for (OrientationFilter* filter : {static_cast<OrientationFilter*>(&mahony), static_cast<OrientationFilter*>(&kalman)}) {
+            ReplayResult r = replay(rows, *filter);
+            CAPTURE(std::string(filter->name()));
+            CHECK(r.finite);
+            CHECK(r.ignited);
+            CHECK(r.ignitedAt < 2.5);
+            CHECK(r.worstRestTiltDeg < 3.f);
+            // Recordings that start with the Dong lying still must ignite by
+            // learning the gyro bias, not by timing out.
+            if (entry.path().filename().string().rfind("bench-desk", 0) == 0) CHECK(r.learnedBias);
+            MESSAGE(entry.path().filename().string()
+                    << ": " << std::string(filter->name()) << " ignited at " << r.ignitedAt << " s, worst tilt at Rest "
+                    << r.worstRestTiltDeg << " deg, heading drift " << r.headingDriftDeg << " deg");
+        }
     }
 }

@@ -52,11 +52,33 @@ ButtonTracker::Press ButtonTracker::update(bool down, uint32_t nowMs) {
 
 ControlEvent Controls::update(bool aDown, bool bDown, bool cDown, uint32_t nowMs) {
     const bool down[3] = {aDown, bDown, cDown};
+    ButtonTracker::Press presses[3];
+    for (int i = 0; i < 3; ++i) presses[i] = buttons_[i].update(down[i], nowMs);
+
+    // A + C together is its own gesture: swallow both buttons' presses.
+    ButtonTracker& a = buttons_[static_cast<int>(Button::A)];
+    ButtonTracker& c = buttons_[static_cast<int>(Button::C)];
+    if (a.isDown() && c.isDown()) {
+        if (!comboHeld_) {
+            comboHeld_ = true;
+            comboFired_ = false;
+            comboSinceMs_ = nowMs;
+        }
+        a.cancel();
+        c.cancel();
+        presses[static_cast<int>(Button::A)] = presses[static_cast<int>(Button::C)] = ButtonTracker::Press::None;
+        if (!comboFired_ && nowMs - comboSinceMs_ >= kComboMs) {
+            comboFired_ = true;
+            return {ControlEvent::Kind::CalibrateMounting, Setting::None};
+        }
+    } else if (!a.isDown() && !c.isDown()) {
+        comboHeld_ = false;
+    }
+
     ControlEvent result;
     for (int i = 0; i < 3; ++i) {
-        ButtonTracker::Press p = buttons_[i].update(down[i], nowMs);
-        if (p == ButtonTracker::Press::None) continue;
-        ControlEvent e = apply(static_cast<Button>(i), p, nowMs);
+        if (presses[i] == ButtonTracker::Press::None) continue;
+        ControlEvent e = apply(static_cast<Button>(i), presses[i], nowMs);
         if (e.kind != ControlEvent::Kind::None) result = e;
     }
     return result;

@@ -34,6 +34,16 @@ Rgbf Renderer::ignitionColor(float along, float front, const Palette& pal, float
     return front < 1.f ? mix(core, kWhite, edge) : core;
 }
 
+// Pose 1 points the tip up: every Line shows a bright tip. Pose 2 puts Line 0
+// on top: only Line 0 lights. Green fills from the Hilt as the pose is held.
+Rgbf Renderer::calibrationColor(const CalibrationView& cal, size_t line, float along) {
+    const Rgbf kGreen{0.f, 1.f, 0.2f};
+    if (cal.step == 1 && line != 0) return {};
+    if (along < cal.progress) return kGreen * 0.6f;
+    if (cal.step == 0) return kWhite * (along > 1.f - kWarningShare ? 0.8f : 0.08f);
+    return kWhite * 0.5f;
+}
+
 void Renderer::renderSlice(const CloudField::Instant& clouds, const Pose& pose, const Palette& pal, size_t line,
                            float girth) {
     const float first = geometry_.firstPixelDistance();
@@ -65,6 +75,14 @@ void Renderer::render(const FrameInput& in, const Settings& settings, Rgb8* line
     const float pulse = 0.5f + 0.5f * std::sin(static_cast<float>(std::fmod(in.localTime * kPi, 2.0 * kPi)));
     const float hum = 0.92f + 0.08f * std::sin(static_cast<float>(std::fmod(in.localTime * 37.0, 2.0 * kPi)));
     const CloudField::Instant clouds = field_.at(in.showTime);
+
+    if (in.calibration.active) {
+        for (size_t line = 0; line < lineCount; ++line)
+            for (size_t i = 0; i < ppl; ++i)
+                lines[line * ppl + i] =
+                    toRgb8(calibrationColor(in.calibration, line, ppl > 1 ? float(i) / float(ppl - 1) : 0.f));
+        return;
+    }
 
     for (size_t line = 0; line < lineCount; ++line) {
         if (!igniting && (line == 0 || girth > 0.f)) renderSlice(clouds, in.pose, pal, line, girth);

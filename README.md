@@ -41,6 +41,20 @@ Blade like a lightsaber while it learns which way is down, then it fades into
 the clouds. Re-level (hold C) points the clouds' reference heading where you
 are pointing. After a minute at Rest the Blade dims; any motion wakes it.
 
+### Mounting Calibration (once per build)
+
+The Dong has to know how its IMU sits relative to the Blade. Hold **A and C
+together** for 1.5 s (or send `c` over serial), then:
+
+1. Point the **tip straight up** and hold still. Every Line shows a bright
+   tip; green fills from the Hilt as the hold registers (~3 s).
+2. Lay the Blade level with **Line 0 facing the sky** (on the bare board's
+   Blade view: the top bar up) and hold. Only Line 0 lights.
+
+The result is saved in flash and Ignition runs again. A square-mounted board
+snaps to the exact axes, so roughly held poses are fine; an angled mount is
+kept as measured. Until calibrated, the profile's `imuAxes` is used.
+
 ## Building and testing
 
 Toolchain: PlatformIO + pioarduino (Arduino core 3.3.x) — see
@@ -92,20 +106,17 @@ pio run -e xiao_screen -t upload
 pio device monitor -e xiao_screen
 ```
 
-Serial commands: `i` status plus per-stage frame and display timings, `a`
-toggle axis check (5 Hz), `b` Cloud Field micro-benchmark, `v` toggle the
+Serial commands: `i` status plus per-stage frame and display timings, `c`
+start Mounting Calibration, `f` switch orientation filter (Mahony / Kalman),
+`a` toggle axis check (5 Hz), `b` Cloud Field micro-benchmark, `v` toggle the
 Blade view, `R`/`S` start/stop raw IMU streaming.
 
 1. **Boot and IMU.** The Blade view comes up right away (C shows the Status page). `i`
    should name the chip (LSM6DS3 / LSM6DS3TR-C / LSM6DSO) and report about
    833 Hz IMU and up to 240 fps.
-2. **IMU axes.** Press `a` and hold the board in three poses: screen right
-   edge pointing up, screen top edge pointing up, lying flat face up. The
-   `up=` field names the sensor axis that sees gravity in each pose; those
-   three are body +X, +Y and +Z. Put them into `imuAxes` in the `screen`
-   profile in [src/profiles.h](src/profiles.h) (`source` = sensor axis
-   0/1/2 for X/Y/Z, `sign` = -1 where `up` was negative), rebuild, and check
-   that `Blade pitch` reads +90 with the right edge up.
+2. **Mounting.** Run Mounting Calibration (A + C, see above): right edge of
+   the screen up, then top edge up. Then press `a`: `Blade pitch` should read
+   about +90 with the right edge up and 0 lying flat.
 3. **Ignition.** Reset with the board still: the bars extend from the left
    in about a second. Reset while shaking it: still done within two seconds.
 4. **Slicing.** Sweep the board slowly left and right and tilt it up and
@@ -158,6 +169,13 @@ Hardware lessons so far:
 - Real gyro noise is ~0.03 rad/s sample to sample; Rest detection works on
   smoothed readings (see `test/data/bench-desk-20s.csv`).
 
-Still to check: IMU axis directions vs. the Blade (`imuAxes`), and on a real
-strip: LED colors, signal quality at 8-12 MHz through the level shifter, and
-current draw.
+Two orientation filters sit behind one interface: Mahony (default) and an
+error-state Kalman filter with innovation gating; `f` switches live. In
+simulation the Kalman filter holds tilt 13x better when the gyro bias shifts
+mid-swing and somewhat better through big swings, and is slightly worse
+under hand jitter (`pio test -e native -f test_motion -v` prints the
+comparison). Pick the default from real swing recordings.
+
+Still to check: Mounting Calibration on the board, the Kalman filter's CPU
+cost at 817 Hz, and on a real strip: LED colors, signal quality at 8-12 MHz
+through the level shifter, and current draw.

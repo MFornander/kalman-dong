@@ -5,64 +5,28 @@
 namespace kd {
 
 namespace {
-// Rest detection compares a lightly smoothed reading against a slower mean.
-// Comparing raw samples would let sensor noise (~0.03 rad/s on a real
-// LSM6DS3TR-C) break stillness on almost every sample.
-constexpr float kFastTimeConstant = 0.05f;  // s
-constexpr float kMeanTimeConstant = 0.3f;   // s
-constexpr float kMaxDt = 0.05f;            // s; larger gaps are treated as this
+constexpr float kMaxDt = 0.05f;  // s; larger gaps are treated as this
 }  // namespace
 
 MotionTracker::MotionTracker(OrientationFilter& filter, const MotionSettings& settings)
-    : filter_(filter), settings_(settings) {}
+    : filter_(&filter), settings_(settings), stillness_({settings.restGyroNoise, settings.restAccelNoise}) {}
 
 void MotionTracker::begin(const Vec3& savedBias) {
     ignited_ = false;
     elapsed_ = 0;
     ignitionProgress_ = 0;
     bias_ = savedBias;
-    haveMeans_ = false;
-    stillTime_ = 0;
-    stillGyroSum_ = stillAccelSum_ = {};
-    stillWeight_ = 0;
+    stillness_.reset();
     learnedThisRest_ = 0;
     reference_ = {};
     lastRate_ = {};
     pushPos_ = pushVel_ = {};
 }
 
-void MotionTracker::updateStillness(const ImuSample& s) {
-    if (!haveMeans_) {
-        gyroMean_ = gyroFast_ = s.gyro;
-        accelMean_ = accelFast_ = s.accel;
-        haveMeans_ = true;
-    }
-    float fast = s.dt / (kFastTimeConstant + s.dt);
-    float slow = s.dt / (kMeanTimeConstant + s.dt);
-    gyroFast_ += (s.gyro - gyroFast_) * fast;
-    accelFast_ += (s.accel - accelFast_) * fast;
-    gyroMean_ += (s.gyro - gyroMean_) * slow;
-    accelMean_ += (s.accel - accelMean_) * slow;
-
-    bool still = (gyroFast_ - gyroMean_).norm() < settings_.restGyroNoise &&
-                 (accelFast_ - accelMean_).norm() < settings_.restAccelNoise;
-    if (still) {
-        stillTime_ += s.dt;
-        stillGyroSum_ += s.gyro * s.dt;
-        stillAccelSum_ += s.accel * s.dt;
-        stillWeight_ += s.dt;
-    } else {
-        stillTime_ = 0;
-        stillGyroSum_ = stillAccelSum_ = {};
-        stillWeight_ = 0;
-        learnedThisRest_ = 0;
-    }
-}
-
 void MotionTracker::ignite(const Vec3& accel) {
     Quat q = Quat::fromTo(accel, Vec3{0, 0, 1});
     q = q.yawPart().conj() * q;  // start facing the reference heading
-    filter_.reset(q);
+    filter_->reset(q);
     reference_ = {};
     pushPos_ = pushVel_ = {};
     ignited_ = true;
@@ -74,27 +38,30 @@ void MotionTracker::update(const ImuSample& sample) {
     s.dt = clampf(s.dt, 0.f, kMaxDt);
     if (s.dt <= 0.f) return;
     elapsed_ += s.dt;
-    updateStillness(s);
+    stillness_.update(s.gyro, s.accel, s.dt);
+    if (stillness_.stillTime() <= 0.f) learnedThisRest_ = 0;
 
     if (!ignited_) {
-        float progress = std::fmax(stillTime_ / settings_.ignitionStill, elapsed_ / settings_.ignitionTimeout);
+        float stillTime = stillness_.stillTime();
+        float progress = std::fmax(stillTime / settings_.ignitionStill, elapsed_ / settings_.ignitionTimeout);
         ignitionProgress_ = clampf(std::fmax(ignitionProgress_, progress), 0.f, 1.f);
-        if (stillTime_ >= settings_.ignitionStill && stillWeight_ > 0.f) {
-            bias_ = stillGyroSum_ * (1.f / stillWeight_);
+        if (stillTime >= settings_.ignitionStill) {
+            bias_ = stillness_.stillGyro();
             ++biasGeneration_;
-            ignite(stillAccelSum_ * (1.f / stillWeight_));
+            ignite(stillness_.stillAccel());
         } else if (elapsed_ >= settings_.ignitionTimeout) {
-            ignite(accelMean_);  // keep the saved bias
+            ignite(stillness_.recentAccel());  // keep the saved bias
         }
         return;
     }
 
     Vec3 rate = s.gyro - bias_;
-    filter_.update(rate, s.accel, s.dt);
+    filter_->update(rate, s.accel, s.dt);
     lastRate_ = rate;
 
-    if (atRest() && (gyroMean_ - bias_).norm() < settings_.restMaxBiasStep) {
-        bias_ += (gyroMean_ - bias_) * (s.dt / (settings_.biasTimeConstant + s.dt));
+    const Vec3 recentGyro = stillness_.recentGyro();
+    if (atRest() && (recentGyro - bias_).norm() < settings_.restMaxBiasStep) {
+        bias_ += (recentGyro - bias_) * (s.dt / (settings_.biasTimeConstant + s.dt));
         learnedThisRest_ += s.dt;
         // Report a new bias once per Rest, after it has had time to settle.
         if (learnedThisRest_ >= 2.f * settings_.biasTimeConstant &&
@@ -106,7 +73,7 @@ void MotionTracker::update(const ImuSample& sample) {
 }
 
 void MotionTracker::updatePush(const Vec3& accel, float dt) {
-    Vec3 linear = filter_.orientation().rotate(accel) - Vec3{0, 0, kGravity};
+    Vec3 linear = filter_->orientation().rotate(accel) - Vec3{0, 0, kGravity};
     float mag = linear.norm();
     Vec3 drive = mag > settings_.pushDeadband ? linear * ((mag - settings_.pushDeadband) / mag) : Vec3{};
 
@@ -125,13 +92,20 @@ void MotionTracker::updatePush(const Vec3& accel, float dt) {
     }
 }
 
+void MotionTracker::setFilter(OrientationFilter& filter) {
+    if (&filter == filter_) return;
+    Quat q = filter_->orientation();
+    filter_ = &filter;
+    filter_->reset(q);
+}
+
 void MotionTracker::relevel() {
-    if (ignited_) reference_ = filter_.orientation().yawPart();
+    if (ignited_) reference_ = filter_->orientation().yawPart();
 }
 
 Pose MotionTracker::pose(float lookahead) const {
     if (!ignited_) return {};
-    Quat q = filter_.orientation();
+    Quat q = filter_->orientation();
     if (lookahead > 0.f) q = (q * Quat::fromRotationVector(lastRate_ * lookahead)).normalized();
     Quat toField = reference_.conj();
     return {toField * q, toField.rotate(pushPos_)};
