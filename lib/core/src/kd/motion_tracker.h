@@ -2,7 +2,7 @@
 //
 // It owns everything around the orientation filter: Ignition (learning which
 // way is down and the gyro bias), Rest detection and bias re-learning,
-// Re-level, Push, and predicting the Pose forward to when Pixels light up.
+// Re-level, Travel and Push, and predicting the Pose forward to when Pixels light up.
 #pragma once
 
 #include "blade_geometry.h"
@@ -32,12 +32,23 @@ struct MotionSettings {
     float ignitionStill = 1.0f;
     float ignitionTimeout = 2.0f;
 
-    // Push: a critically damped spring pulling the Dong's apparent
-    // displacement back to zero.
-    float pushHz = 0.8f;        // spring frequency
-    float pushGain = 1.0f;      // 1 = displacement as measured
-    float pushDeadband = 0.4f;  // m/s^2 of linear acceleration ignored
-    float pushMax = 0.3f;       // m
+    // Travel: a stroke of the Hilt without rotation moves the Dong through
+    // the Cloud Field for good. A stroke starts when the linear acceleration
+    // passes `strokeDeadband` while the Dong isn't rotating, and ends once it
+    // has been calm for `strokeCalmHold`. Its level part is then kept as
+    // Travel; everything else (up and down, small jiggles, strokes cut short
+    // by a swing) becomes Push, a critically damped spring back to zero.
+    float strokeDeadband = 0.4f;   // m/s^2 of linear acceleration ignored
+    float strokeGateRate = 1.5f;   // rad/s; turning faster than this is a swing, not a stroke
+    float strokeGateHold = 0.2f;   // s; ... and for this long after
+    float strokeCalmAccel = 0.6f;  // m/s^2; smoothed linear acceleration below this is calm
+    float strokeCalmRate = 0.6f;   // rad/s
+    float strokeCalmHold = 0.15f;  // s
+    float strokeMaxTime = 2.f;     // s; longer strokes (shaking, walking) are not trusted
+    float strokeMin = 0.05f;       // m; shorter level strokes spring back instead
+    float strokeMax = 1.f;         // m
+    float travelGain = 0.6f;       // share of each stroke shown; hides integration error
+    float pushHz = 0.8f;           // Push spring frequency
 };
 
 class MotionTracker {
@@ -56,8 +67,12 @@ public:
     bool atRest() const { return stillness_.stillTime() >= settings_.restHold; }
     float restSeconds() const { return atRest() ? stillness_.stillTime() - settings_.restHold : 0.f; }
 
-    // Make the current heading the Cloud Field's reference heading.
+    // Make the current heading the Cloud Field's reference heading, and bring
+    // the Dong back to the field's origin (clearing Travel and Push).
     void relevel();
+
+    // Travel so far, in the Cloud Field frame (m).
+    Vec3 travel() const;
 
     // Pose now, or predicted `lookahead` seconds ahead.
     Pose pose(float lookahead = 0.f) const;
@@ -74,7 +89,9 @@ public:
 
 private:
     void ignite(const Vec3& accel);
-    void updatePush(const Vec3& accel, float dt);
+    void updateDisplacement(const Vec3& accel, const Vec3& rate, float dt);
+    void endStroke(bool keep);
+    void clearDisplacement();
 
     OrientationFilter* filter_;
     MotionSettings settings_;
@@ -91,8 +108,14 @@ private:
 
     Quat reference_;     // heading reference set by Re-level
     Vec3 lastRate_;       // bias-corrected body rate, for prediction
-    Vec3 pushPos_;        // world frame
-    Vec3 pushVel_;
+    // Displacement, all in the filter's world frame.
+    Vec3 travel_;
+    bool inStroke_ = false;
+    Vec3 strokeVel_, strokePos_;  // as measured, before travelGain
+    float strokeTime_ = 0, calmTime_ = 0;
+    float sinceRotating_ = 0;  // s since turning faster than strokeGateRate
+    float linearSmooth_ = 0;   // m/s^2; smoothed size of the linear acceleration
+    Vec3 pushPos_, pushVel_;
 };
 
 }  // namespace kd

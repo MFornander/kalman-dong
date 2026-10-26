@@ -172,33 +172,128 @@ TEST_CASE_TEMPLATE("prediction looks ahead along the current rotation", F, FILTE
     CHECK(r.tracker.pose(0.f).orientation.angleTo(now.orientation) < 1e-6f);
 }
 
-TEST_CASE_TEMPLATE("a forward thrust Pushes the clouds, then they settle back", F, FILTERS) {
+namespace {
+
+// A stroke of the Hilt with no rotation: `accel` m/s^2 along world `dir` for
+// `phase` s, then the same braking, then still.
+void thrust(sim::Imu& imu, Vec3 dir, float accel, double phase) {
+    const double t0 = imu.time;
+    imu.linear = [=](double t) {
+        const double dt = t - t0;
+        return dir * (dt < phase ? accel : dt < 2 * phase ? -accel : 0.f);
+    };
+}
+
+// How far the Dong appears moved: Travel plus any Push.
+template <typename Filter>
+Vec3 shift(const Rig<Filter>& r) { return r.tracker.pose().displacement; }
+
+}  // namespace
+
+TEST_CASE_TEMPLATE("a thrust moves the Dong through the clouds, and it stays there", F, FILTERS) {
     Rig<F> r;
     r.tracker.begin({});
     r.imu.run(r.tracker, 1.5);
-    // Thrust 0.15 s accelerating along world +Y, then 0.15 s braking.
-    double t0 = r.imu.time;
-    r.imu.linear = [t0](double t) {
-        double dt = t - t0;
-        float a = dt < 0.15 ? 15.f : (dt < 0.3 ? -15.f : 0.f);
-        return Vec3{0, a, 0};
-    };
+    thrust(r.imu, {0, 1, 0}, 15.f, 0.15);  // 34 cm along world +Y
     float peak = 0.f;
     for (int i = 0; i < 400; ++i) {
         r.tracker.update(r.imu.step());
-        peak = std::fmax(peak, r.tracker.pose().push.norm());
+        peak = std::fmax(peak, shift(r).norm());
     }
-    CHECK(peak > 0.08f);
-    CHECK(peak <= 0.3f + 1e-4f);
+    CHECK(peak > 0.1f);
     r.imu.run(r.tracker, 2.0);
-    CHECK(r.tracker.pose().push.norm() < 0.02f);
+    const Vec3 settled = shift(r);
+    // Kept at about 60% of the move, level, and for good.
+    CHECK(settled.norm() > 0.15f);
+    CHECK(settled.norm() < 0.25f);
+    CHECK(std::fabs(settled.z) < 0.01f);
+    CHECK(r.tracker.travel().norm() == doctest::Approx(settled.norm()).epsilon(0.05));
+    r.imu.run(r.tracker, 5.0);
+    CHECK((shift(r) - settled).norm() < 0.01f);
 }
 
-TEST_CASE_TEMPLATE("held still, nothing is Pushed", F, FILTERS) {
+TEST_CASE_TEMPLATE("moving out and back again returns to the same clouds", F, FILTERS) {
+    Rig<F> r;
+    r.tracker.begin({});
+    r.imu.run(r.tracker, 1.5);
+    thrust(r.imu, {1, 0, 0}, 12.f, 0.15);
+    r.imu.run(r.tracker, 1.5);
+    CHECK(shift(r).norm() > 0.1f);
+    thrust(r.imu, {-1, 0, 0}, 12.f, 0.15);
+    r.imu.run(r.tracker, 2.0);
+    CHECK(shift(r).norm() < 0.04f);
+}
+
+TEST_CASE_TEMPLATE("a small jiggle Pushes the clouds, then they settle back", F, FILTERS) {
+    Rig<F> r;
+    r.tracker.begin({});
+    r.imu.run(r.tracker, 1.5);
+    thrust(r.imu, {0, 1, 0}, 4.f, 0.1);  // about 4 cm
+    float peak = 0.f;
+    for (int i = 0; i < 400; ++i) {
+        r.tracker.update(r.imu.step());
+        peak = std::fmax(peak, shift(r).norm());
+    }
+    CHECK(peak > 0.005f);
+    r.imu.run(r.tracker, 2.0);
+    CHECK(shift(r).norm() < 0.005f);
+    CHECK(r.tracker.travel().norm() < 1e-6f);
+}
+
+TEST_CASE_TEMPLATE("moving up or down springs back; only level moves are kept", F, FILTERS) {
+    Rig<F> r;
+    r.tracker.begin({});
+    r.imu.run(r.tracker, 1.5);
+    thrust(r.imu, {0, 0, 1}, 15.f, 0.15);
+    r.imu.run(r.tracker, 3.0);
+    CHECK(shift(r).norm() < 0.02f);
+}
+
+TEST_CASE_TEMPLATE("shaking for seconds is not kept", F, FILTERS) {
+    Rig<F> r;
+    r.tracker.begin({});
+    r.imu.run(r.tracker, 1.5);
+    r.imu.linear = [](double t) { return Vec3{0, 4.f * float(std::sin(2 * kPi * 3 * t)), 0}; };
+    r.imu.run(r.tracker, 4.0);
+    r.imu.linear = [](double) { return Vec3{}; };
+    r.imu.run(r.tracker, 2.5);
+    CHECK(shift(r).norm() < 0.03f);
+    CHECK(r.tracker.travel().norm() < 1e-6f);
+}
+
+TEST_CASE_TEMPLATE("swinging hard does not move the Dong through the clouds", F, FILTERS) {
+    Rig<F> r;
+    r.tracker.begin({});
+    r.imu.run(r.tracker, 1.5);
+    // Big arcs whose rate passes through slow reversals, with the strong
+    // forces a Hilt feels when swung from the wrist.
+    r.imu.omega = [](double t) { return Vec3{0, 8.f * float(std::sin(4 * t)), 0}; };
+    r.imu.linear = [](double t) { return Vec3{30.f * float(std::sin(8 * t)), 0, 20.f * float(std::cos(8 * t))}; };
+    r.imu.run(r.tracker, 5.0);
+    r.imu.omega = [](double) { return Vec3{}; };
+    r.imu.linear = [](double) { return Vec3{}; };
+    r.imu.run(r.tracker, 3.0);
+    CHECK(shift(r).norm() < 0.05f);
+}
+
+TEST_CASE_TEMPLATE("Re-level brings the Dong back to where the clouds started", F, FILTERS) {
+    Rig<F> r;
+    r.tracker.begin({});
+    r.imu.run(r.tracker, 1.5);
+    thrust(r.imu, {0, 1, 0}, 15.f, 0.15);
+    r.imu.run(r.tracker, 2.0);
+    REQUIRE(shift(r).norm() > 0.1f);
+    r.tracker.relevel();
+    CHECK(shift(r).norm() < 1e-6f);
+    r.imu.run(r.tracker, 1.0);
+    CHECK(shift(r).norm() < 0.005f);
+}
+
+TEST_CASE_TEMPLATE("held still, nothing moves", F, FILTERS) {
     Rig<F> r;
     r.tracker.begin({});
     r.imu.run(r.tracker, 10.0);
-    CHECK(r.tracker.pose().push.norm() < 0.005f);
+    CHECK(shift(r).norm() < 0.005f);
 }
 
 TEST_CASE_TEMPLATE("violent swings disturb tilt only briefly", F, FILTERS) {
