@@ -48,6 +48,58 @@ rather than read is marked *(inferred)*. Spec values are datasheet
     the ESP32-S3 ([ceva], [ada-stretch]);
   - SlimeVR lists it as discontinued and "Poor".
 
+## Would a better IMU handle translation better?
+
+Context: Travel is being developed on branch `dev-mf/travel` and is not
+merged yet; its ADR there is `docs/adr/0002-orientation-only-anchoring.md`.
+- Each deliberate stroke of the Hilt without rotation is integrated on its
+  own.
+- Strokes are gated off while turning faster than 1.5 rad/s.
+- Linear acceleration under 0.4 m/s² is ignored.
+- 60% of each stroke is kept, and only its level part.
+
+The answer is: a little, but not much. Travel is limited mostly by how it is
+computed, not by the sensor.
+
+- **Tilt error leaking gravity into the strokes (biggest).**
+  - Linear acceleration is the accelerometer reading minus gravity, rotated
+    by the estimated orientation. Each 1° of tilt error leaves about
+    0.17 m/s² of false acceleration.
+  - The quiet-moment tilt error on the hand-sweep recording averages up to
+    4.5° ([test/data/README.md](../../test/data/README.md)). That is about
+    0.8 m/s², above the 0.4 m/s² stroke deadband. It is an overestimate,
+    since that yardstick includes some hand acceleration.
+  - A gyro with less bias drift and noise holds tilt better while the
+    accelerometer is busy with the move. So the LSM6DSV16X should help here:
+    real but modest *(inferred)*.
+- **Accelerometer noise and offset drift barely matter.**
+  - A stroke lasts well under 2 s and is measured on its own, so errors don't
+    accumulate.
+  - The LSM6DSV16X's accelerometer is better: offset drift of ±0.07 vs
+    ±0.5 mg/°C ([dsv16x], [ds3trc]).
+  - Even today's chip moves by only about 0.025 m/s² (2.5 mg) for a 5 °C
+    change, far under the deadband.
+- **The algorithm's choices dominate how it feels, on any IMU:**
+  - the 0.4 m/s² deadband trims slow starts and stops;
+  - only 60% of each stroke is kept;
+  - strokes made while turning are discarded;
+  - vertical moves spring back.
+- **What would really change it:**
+  - *Translation through swings:* most of what the Hilt's IMU feels during a
+    swing is it circling the wrist. With the wrist-to-IMU lever arm known,
+    the firmware could subtract ω×(ω×r) + α×r and keep measuring while
+    turning. That works with any IMU; a quieter gyro makes α cleaner.
+  - *Room-scale position* needs an outside reference (UWB anchors, a camera).
+    Any IMU alone gives short strokes only, because position error grows with
+    time squared.
+- **Next step before buying hardware:** record 20 s of deliberate moves on the
+  current board and replay it. That shows whether strokes are lost to tilt
+  leakage (a better IMU helps) or to the gate and deadband (tuning).
+
+  ```bash
+  uv run tools/bringup.py record dong-strokes-20s --seconds 20
+  ```
+
 ## What actually limits heading today
 
 A 6-axis IMU cannot observe heading, so yaw is integrated gyro. The plausible
