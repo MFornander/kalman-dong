@@ -575,9 +575,11 @@ void loop() {
     in.localTime = in.showTime;
     in.batteryFraction = battery;
     bool atRest = false;
+    kd::Quat rotZero;
     if (imuOk) {
         xSemaphoreTake(trackerLock, portMAX_DELAY);
         in.pose = tracker.pose(lookahead);
+        rotZero = tracker.zeroOrientation();
         in.ignitionProgress = tracker.ignitionProgress();
         in.restSeconds = tracker.restSeconds();
         atRest = tracker.atRest();
@@ -674,7 +676,7 @@ void loop() {
     status.imuHz = imuHz;
     status.atRest = atRest;
     {
-        const kd::PoseReadout r = kd::readout(in.pose);
+        const kd::PoseReadout r = kd::readout(in.pose, rotZero);
         memcpy(status.pos, r.pos, sizeof(status.pos));
         memcpy(status.rot, r.rot, sizeof(status.rot));
     }

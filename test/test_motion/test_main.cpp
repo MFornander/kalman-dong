@@ -289,6 +289,22 @@ TEST_CASE_TEMPLATE("Re-level brings the Dong back to where the clouds started", 
     CHECK(shift(r).norm() < 0.005f);
 }
 
+TEST_CASE_TEMPLATE("the orientation at Ignition, and then at each Re-level, is the zero for readouts", F, FILTERS) {
+    Rig<F> r;
+    r.tracker.begin({});
+    r.imu.run(r.tracker, 1.5);
+    REQUIRE(r.tracker.ignited());
+    CHECK(radToDeg(r.tracker.pose().orientation.angleTo(r.tracker.zeroOrientation())) < 1.f);
+    // Turn 60 degrees about the Blade, then Re-level there.
+    r.imu.omega = [](double) { return Vec3{degToRad(60.f), 0, 0}; };
+    r.imu.run(r.tracker, 1.0);
+    r.imu.omega = [](double) { return Vec3{}; };
+    r.imu.run(r.tracker, 0.5);
+    CHECK(radToDeg(r.tracker.pose().orientation.angleTo(r.tracker.zeroOrientation())) > 50.f);
+    r.tracker.relevel();
+    CHECK(radToDeg(r.tracker.pose().orientation.angleTo(r.tracker.zeroOrientation())) < 1.f);
+}
+
 TEST_CASE_TEMPLATE("held still, nothing moves", F, FILTERS) {
     Rig<F> r;
     r.tracker.begin({});

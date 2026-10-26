@@ -74,6 +74,10 @@ public:
     // Travel so far, in the Cloud Field frame (m).
     Vec3 travel() const;
 
+    // The orientation (in the Cloud Field frame) at the last Ignition or
+    // Re-level: where readouts of how the Dong is turned count from.
+    Quat zeroOrientation() const { return zero_; }
+
     // Pose now, or predicted `lookahead` seconds ahead.
     Pose pose(float lookahead = 0.f) const;
 
@@ -107,6 +111,7 @@ private:
     float learnedThisRest_ = 0;  // s of bias learning in the current Rest
 
     Quat reference_;     // heading reference set by Re-level
+    Quat zero_;          // see zeroOrientation()
     Vec3 lastRate_;       // bias-corrected body rate, for prediction
     // Displacement, all in the filter's world frame.
     Vec3 travel_;

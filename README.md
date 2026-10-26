@@ -130,11 +130,12 @@ At the tip end, a header reads upright with the Blade pointing up, as a grid
 of x, y and z:
 
 - **POS** is how far the Dong has moved through the clouds (Travel plus Push),
-  in decimetres, wrapping every 10 m to -50..49.
-- **ROT** is its roll, tip up and turn as percent of a half turn (180° = 100).
-  Positive is rolled clockwise looking out along the Blade, tip above level,
-  and turned clockwise seen from above. The turn is where heading drift, and
-  so the orientation filter, shows.
+  in centimetres, wrapping every 10 m to -500..499.
+- **ROT** is how it has turned since Ignition or the last Re-level, as roll,
+  tip up and turn in percent of a half turn (90° = 50, 180° = 100). Positive
+  is rolled clockwise looking out along the Blade, tip raised, and turned
+  clockwise seen from above. The turn is where heading drift, and so the
+  orientation filter, shows.
 
 While a button is held the header shows what letting go will do instead, and
 setting changes show there briefly. The Status page (C quick) is upright in

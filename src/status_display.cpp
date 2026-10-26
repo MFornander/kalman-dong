@@ -44,9 +44,9 @@ constexpr int kHeaderRow1 = 2, kHeaderRow2 = 21, kHeaderBar = 42;  // upright y
 // characters in 135 px.)
 constexpr int kTextFont = 2;
 // The POS / ROT grid: a label and three left-justified cells per row, offset
-// from the label's x.
-constexpr int kGridCellX[3] = {32, 68, 104};
-constexpr int kGridCellWidth = 26;
+// from the label's x. A cell fits 4 characters ("-500" is 30 px).
+constexpr int kGridCellX[3] = {30, 64, 98};
+constexpr int kGridCellWidth = 31;
 
 enum class Page { Off, Status, Blade };
 
@@ -165,7 +165,7 @@ void drawGrid(int x, const int y[2], const int pos[3], const int rot[3]) {
             if (r == 1 && (values[r][i] == 100 || values[r][i] == -100))
                 snprintf(cell, sizeof(cell), "100");
             else
-                snprintf(cell, sizeof(cell), "%+d", values[r][i]);
+                snprintf(cell, sizeof(cell), "%d", values[r][i]);
             if (strcmp(cell, shownCell[r][i]) == 0) continue;
             strcpy(shownCell[r][i], cell);
             pushText(x + kGridCellX[i], y[r], kGridCellWidth, kTextHeight, cell, TFT_WHITE, kTextFont);

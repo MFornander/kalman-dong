@@ -19,6 +19,7 @@ void MotionTracker::begin(const Vec3& savedBias) {
     stillness_.reset();
     learnedThisRest_ = 0;
     reference_ = {};
+    zero_ = {};
     lastRate_ = {};
     clearDisplacement();
 }
@@ -28,6 +29,7 @@ void MotionTracker::ignite(const Vec3& accel) {
     q = q.yawPart().conj() * q;  // start facing the reference heading
     filter_->reset(q);
     reference_ = {};
+    zero_ = filter_->orientation();
     clearDisplacement();
     ignited_ = true;
     ignitionProgress_ = 1.f;
@@ -153,6 +155,7 @@ void MotionTracker::setFilter(OrientationFilter& filter) {
 void MotionTracker::relevel() {
     if (!ignited_) return;
     reference_ = filter_->orientation().yawPart();
+    zero_ = reference_.conj() * filter_->orientation();
     clearDisplacement();
 }
 
