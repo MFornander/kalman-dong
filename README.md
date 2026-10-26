@@ -18,13 +18,16 @@ defined in [CONTEXT.md](CONTEXT.md); key decisions are in [docs/adr/](docs/adr/)
 - Seeed **XIAO ESP32-S3 Plus with the 1.14" display** carrier: onboard
   LSM6DS3-family IMU (I2C, INT1 on GPIO41), ST7789 display, buttons A/B/C.
 - **SK9822/APA102** 4-pin Pixels in 4 Lines along a 1-2 m Blade. Data and
-  clock go on the free pads GPIO38/39 (a second Strand uses GPIO40/42),
-  through a 74AHCT125 level shifter for 5 V Pixels.
-- One battery pack feeds the Pixels and the board's 5 V input (via a diode).
-  Pack voltage can be sensed through a divider on a free pad.
+  clock go on the pads D11/D12 (GPIO38/39; a second Strand uses D13/D15).
+  The 1 m prototype drives them directly at 4 MHz; longer builds add a
+  74AHCT125 level shifter.
+- The prototype runs from a two-port USB power bank: one port to the board's
+  USB-C, one to the Pixels' 5 V at the Hilt. Three external buttons wire to
+  the U1-U3 pads.
 
-Wiring, power and first light for the Pixels:
-[docs/led-build.md](docs/led-build.md).
+Wiring, power, buttons and first light:
+[docs/led-build.md](docs/led-build.md), with the
+[exact pads on the carrier](docs/led-build.md#where-each-wire-goes-on-the-carrier).
 
 Each physical build is a **Dong Profile** in [src/profiles.h](src/profiles.h):
 Blade length, Pixels per Line, how Strands fold into Lines, pins, IMU axis
@@ -231,5 +234,5 @@ mid-motion), while Mahony holds heading better at rest (0.07 vs 1.0 deg over
 IMU cost per sample on the board (budget 1224 us at 817 Hz): I2C read ~550
 us, tracking ~100 us with Mahony and ~200 us with Kalman.
 
-Still to check, on a real strip: LED colors, signal quality at
-8-12 MHz through the level shifter, and current draw.
+Still to check, on a real strip: LED colors, signal quality at 4 MHz
+without a level shifter (the 1 m prototype), and current draw.

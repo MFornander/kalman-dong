@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 540" width="820" height="540" role="img" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+  <title>1 m prototype wiring</title>
+  <desc>No level shifter and power only at the Hilt. Pad D11 (GPIO38) goes to DATA and pad D12 (GPIO39) to CLOCK at the Hilt end of Line 0, with a ground wire from the GND pad above D11 beside them. A two-port USB power bank powers the board through its USB-C port and, through a cut USB cable, a 5 V and GND bus at the Hilt with a 1000 uF capacitor and a jumper pair to the Hilt end of every Line. The tip has no power; folds carry only DATA and CLOCK.</desc>
+  <defs>
+    <marker id="as" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#0F6E56" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker>
+  </defs>
+  <rect x="1" y="1" width="818" height="538" rx="12" fill="#FFFFFF" stroke="#D3D1C7"/>
+
+  <!-- Lines, tip at the top, Hilt at the bottom -->
+  <text x="615" y="26" fill="#5F5E5A" font-size="12" text-anchor="middle">Tip: no power here; the folds carry DATA and CLOCK only</text>
+  <g fill="#5F5E5A" font-size="13" text-anchor="end">
+    <text x="458" y="52">Tip</text>
+    <text x="458" y="366">Hilt</text>
+  </g>
+  <g fill="#E1F5EE" stroke="#0F6E56">
+    <rect x="470" y="40" width="30" height="280" rx="6"/>
+    <rect x="560" y="40" width="30" height="280" rx="6"/>
+    <rect x="650" y="40" width="30" height="280" rx="6"/>
+    <rect x="740" y="40" width="30" height="280" rx="6"/>
+  </g>
+  <g stroke="#0F6E56" stroke-width="2" fill="none">
+    <line x1="492" y1="290" x2="492" y2="64" marker-end="url(#as)"/>
+    <line x1="582" y1="64" x2="582" y2="290" marker-end="url(#as)"/>
+    <line x1="672" y1="290" x2="672" y2="64" marker-end="url(#as)"/>
+    <line x1="762" y1="64" x2="762" y2="290" marker-end="url(#as)"/>
+  </g>
+  <g fill="#085041" font-size="13" font-weight="600" text-anchor="middle">
+    <text x="484" y="180" transform="rotate(-90 484 180)">Line 0</text>
+    <text x="574" y="180" transform="rotate(-90 574 180)">Line 1</text>
+    <text x="664" y="180" transform="rotate(-90 664 180)">Line 2</text>
+    <text x="754" y="180" transform="rotate(-90 754 180)">Line 3</text>
+  </g>
+
+  <!-- Board -->
+  <rect x="40" y="200" width="260" height="172" rx="8" fill="#EEEDFE" stroke="#534AB7"/>
+  <text x="170" y="226" fill="#3C3489" font-size="14" font-weight="600" text-anchor="middle">XIAO ESP32-S3 Plus</text>
+  <text x="170" y="244" fill="#534AB7" font-size="12" text-anchor="middle">1.14" display board, in the Hilt</text>
+  <g fill="#534AB7" font-size="12" text-anchor="end">
+    <text x="290" y="296">pad D11 · GPIO38 · DATA</text>
+    <text x="290" y="314">pad D12 · GPIO39 · CLOCK</text>
+    <text x="290" y="340">pad GND, above D11</text>
+  </g>
+  <text x="110" y="364" fill="#534AB7" font-size="12" text-anchor="middle">USB-C</text>
+
+  <!-- Signals: straight into Line 0, no level shifter -->
+  <g fill="#0F6E56" font-size="11" text-anchor="middle">
+    <text x="383" y="266">to DI and CI of Line 0</text>
+    <text x="383" y="280">under 10 cm, no shifter</text>
+  </g>
+  <g stroke="#0F6E56" stroke-width="2" fill="none">
+    <line x1="300" y1="292" x2="466" y2="292" marker-end="url(#as)"/>
+    <line x1="300" y1="310" x2="466" y2="310" marker-end="url(#as)"/>
+  </g>
+
+  <!-- Ground: board, bus, bank -->
+  <g stroke="#5F5E5A" fill="none">
+    <path d="M300 336 H380 V380" stroke-width="2"/>
+    <line x1="380" y1="380" x2="755" y2="380" stroke-width="3"/>
+    <path d="M300 455 H395 V380" stroke-width="2"/>
+    <line x1="478" y1="380" x2="478" y2="320" stroke-width="2"/>
+    <line x1="568" y1="380" x2="568" y2="320" stroke-width="2"/>
+    <line x1="658" y1="380" x2="658" y2="320" stroke-width="2"/>
+    <line x1="748" y1="380" x2="748" y2="320" stroke-width="2"/>
+  </g>
+  <text x="776" y="384" fill="#444441" font-size="12" font-weight="600">GND</text>
+
+  <!-- 5 V: bank, bus, a jumper to every Line's Hilt end -->
+  <g stroke="#FFFFFF" stroke-width="8">
+    <line x1="492" y1="373" x2="492" y2="387"/>
+    <line x1="582" y1="373" x2="582" y2="387"/>
+    <line x1="672" y1="373" x2="672" y2="387"/>
+    <line x1="762" y1="373" x2="762" y2="387"/>
+  </g>
+  <g stroke="#BA7517" fill="none">
+    <path d="M300 488 H412 V410" stroke-width="2"/>
+    <line x1="412" y1="410" x2="770" y2="410" stroke-width="3"/>
+    <line x1="492" y1="410" x2="492" y2="320" stroke-width="2"/>
+    <line x1="582" y1="410" x2="582" y2="320" stroke-width="2"/>
+    <line x1="672" y1="410" x2="672" y2="320" stroke-width="2"/>
+    <line x1="762" y1="410" x2="762" y2="320" stroke-width="2"/>
+  </g>
+  <text x="776" y="414" fill="#633806" font-size="12" font-weight="600">5 V</text>
+  <g fill="#5F5E5A">
+    <circle cx="380" cy="380" r="4"/><circle cx="395" cy="380" r="4"/>
+    <circle cx="478" cy="380" r="4"/><circle cx="568" cy="380" r="4"/>
+    <circle cx="658" cy="380" r="4"/><circle cx="748" cy="380" r="4"/>
+  </g>
+  <g fill="#BA7517">
+    <circle cx="412" cy="410" r="4"/>
+    <circle cx="492" cy="410" r="4"/><circle cx="582" cy="410" r="4"/>
+    <circle cx="672" cy="410" r="4"/><circle cx="762" cy="410" r="4"/>
+  </g>
+
+  <!-- Capacitor across the bus -->
+  <g stroke="#444441" stroke-width="2" fill="none">
+    <line x1="440" y1="380" x2="440" y2="391"/>
+    <line x1="432" y1="391" x2="448" y2="391"/>
+    <line x1="432" y1="399" x2="448" y2="399"/>
+    <line x1="440" y1="399" x2="440" y2="410"/>
+  </g>
+  <text x="440" y="430" fill="#444441" font-size="11" text-anchor="middle">1000 µF</text>
+
+  <!-- Power bank -->
+  <rect x="40" y="430" width="260" height="84" rx="8" fill="#FAEEDA" stroke="#BA7517"/>
+  <text x="170" y="452" fill="#633806" font-size="14" font-weight="600" text-anchor="middle">USB power bank, 5 V</text>
+  <g fill="#854F0B" font-size="12" text-anchor="middle">
+    <text x="170" y="472">port 1: USB-C cable to the board</text>
+    <text x="170" y="490">port 2: cut USB cable,</text>
+    <text x="170" y="506">black to GND, red to 5 V</text>
+  </g>
+  <line x1="110" y1="430" x2="110" y2="372" stroke="#534AB7" stroke-width="3"/>
+
+  <!-- Notes -->
+  <g fill="#5F5E5A" font-size="12">
+    <text x="470" y="458">Every Line gets 5 V and GND at its Hilt end:</text>
+    <text x="470" y="476">the start of Lines 0 and 2, the end of 1 and 3.</text>
+    <text x="470" y="500">Bus 20 AWG; jumpers and signals 22–24 AWG.</text>
+  </g>
+</svg>
