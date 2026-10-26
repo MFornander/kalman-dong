@@ -349,7 +349,7 @@ void update(const Status& status, const kd::Rgb8* lines, size_t lineCount, size_
     if (statusDue) {
         showPage(Page::Status);
         drawStatus(status);
-    } else if (bladeViewOn) {
+    } else if (bladeViewOn && !status.asleep) {
         showPage(Page::Blade);
         drawBlade(status, lines, lineCount, pixelsPerLine);
     } else {

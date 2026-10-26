@@ -139,7 +139,9 @@ of x, y and z:
 
 While a button is held the header shows what letting go will do instead, and
 setting changes show there briefly. The Status page (C quick) is upright in
-the same pose, with the same grid at the top.
+the same pose, with the same grid at the top. The screen turns off after 60 s
+of lying still with no button pressed, and comes back when the board moves
+or a button is pressed.
 
 The quickest route is the guided bring-up script: it flashes, checks rates
 and filter costs, runs Mounting Calibration and verifies it, records swings

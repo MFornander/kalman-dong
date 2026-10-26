@@ -25,11 +25,15 @@ struct Status {
     int rot[3] = {};
     char banner[40] = "";  // e.g. Mounting Calibration instructions; shown prominently
     int holdSegments = -1;  // while a button is held: half-second segments filled
+    bool asleep = false;    // idle for kSleepAfterMs: the Blade view is off
 };
 
 namespace status_display {
 
 constexpr uint32_t kAwakeMs = 30000;
+// The screen turns off once the Dong has been lying still, with no button
+// pressed, for this long; moving it or pressing a button brings it back.
+constexpr uint32_t kSleepAfterMs = 60000;
 
 bool begin();
 
