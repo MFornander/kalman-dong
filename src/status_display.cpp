@@ -109,8 +109,8 @@ void drawBlade(const Status& s, const kd::Rgb8* lines, size_t lineCount, size_t 
     if (s.banner[0])
         snprintf(buf, sizeof(buf), "%s", s.banner);
     else
-        snprintf(buf, sizeof(buf), "%s  %s %s", kd::palette(s.settings.palette).name, s.atRest ? "rest" : "",
-                 s.recording ? "REC" : "");
+        snprintf(buf, sizeof(buf), "%s   Blade %+d deg  %s %s", kd::palette(s.settings.palette).name, s.bladePitch,
+                 s.atRest ? "rest" : "", s.recording ? "REC" : "");
     if (strcmp(buf, shownHeader) != 0) {
         strcpy(shownHeader, buf);
         display.setTextSize(1);

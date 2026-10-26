@@ -53,10 +53,16 @@ are pointing. After a minute at Rest the Blade dims; any motion wakes it.
 The Dong has to know how its IMU sits relative to the Blade. Hold **A and C
 together** for 1.5 s (or send `c` over serial), then:
 
-1. Point the **tip straight up** and hold still. Every Line shows a bright
-   tip; green fills from the Hilt as the hold registers (~3 s).
-2. Lay the Blade level with **Line 0 facing the sky** (on the bare board's
-   Blade view: the top bar up) and hold. Only Line 0 lights.
+1. **Point the Blade at the ceiling** and hold. Every Line shows a bright
+   tip; green fills from the Hilt as the hold registers (~2 s). Normal hand
+   shake is fine.
+2. **Hold the Blade level with Line 0 on top** and hold. Only Line 0 lights.
+
+On the bare board, pretend it is mounted in a Dong: the Blade sticks straight
+out of the screen's right edge (away from the USB cable, as the Blade view
+draws it) and Line 0 faces out of the screen. So pose 1 is the right edge up
+with the screen facing you, and pose 2 is lying flat, screen up. Check it with
+the Blade angle in the screen's header: about +90 deg in pose 1, 0 lying flat.
 
 The result is saved in flash and Ignition runs again. A square-mounted board
 snaps to the exact axes, so roughly held poses are fine; an angled mount is
@@ -132,9 +138,9 @@ Blade view, `R`/`S` start/stop raw IMU streaming.
 1. **Boot and IMU.** The Blade view comes up right away (C shows the Status page). `i`
    should name the chip (LSM6DS3 / LSM6DS3TR-C / LSM6DSO) and report about
    833 Hz IMU and up to 240 fps.
-2. **Mounting.** Run Mounting Calibration (A + C, see above): right edge of
-   the screen up, then top edge up. Then press `a`: `Blade pitch` should read
-   about +90 with the right edge up and 0 lying flat.
+2. **Mounting.** Run Mounting Calibration (A + C, see above). Then press `a`:
+   `Blade pitch` should read about +90 with the Blade at the ceiling and about
+   0 with it level.
 3. **Ignition.** Reset with the board still: the bars extend from the left
    in about a second. Reset while shaking it: still done within two seconds.
 4. **Slicing.** Sweep the board slowly left and right and tilt it up and

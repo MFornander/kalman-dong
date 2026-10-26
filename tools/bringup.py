@@ -133,12 +133,14 @@ def check(port_path: str, env: str, do_flash: bool) -> None:
 
 def mount(port_path: str) -> None:
     print("\n== Mounting Calibration")
-    print("  Follow the Dong: 1) tip (bare board: right edge) straight up, hold until green fills;")
-    print("                   2) Line 0 (bare board: top bar / top edge) to the sky, hold.")
+    print("  Pretend the board is in a finished Dong. Its Blade sticks straight out of the")
+    print("  screen's right edge (as drawn on screen), and Line 0 is the top bar.")
+    print("    1) Point the Blade at the ceiling; hold until green fills.")
+    print("    2) Hold the Blade level with Line 0 on top; hold until green fills.")
     with open_port(port_path) as port:
         port.reset_input_buffer()
         port.write(b"c")
-        deadline, result = time.monotonic() + 120, None
+        deadline, result = time.monotonic() + 180, None
         while time.monotonic() < deadline and result is None:
             line = port.readline().decode("ascii", errors="replace").strip()
             if line.startswith("# banner:"):
@@ -151,11 +153,11 @@ def mount(port_path: str) -> None:
                        result[1] if result else "timed out"):
             return
 
-        print("  Verify: point the tip / right edge straight UP and hold ...")
+        print("  Verify: point the Blade at the ceiling and hold ...")
         query(port, "a", 0.1)  # start the axis printout
         try:
             verdict(wait_for_pitch(port, lambda p: p > 75, 40), "Blade pitch ~ +90 with the tip up")
-            print("  Now lay it FLAT (Blade level) and hold ...")
+            print("  Now hold the Blade level (pointing at the horizon) ...")
             verdict(wait_for_pitch(port, lambda p: abs(p) < 15, 40), "Blade pitch ~ 0 lying flat")
         finally:
             query(port, "a", 0.3)  # stop it

@@ -21,6 +21,7 @@ struct Status {
     float imuHz = 0.f;
     bool atRest = false;
     bool recording = false;
+    int bladePitch = 0;  // degrees above level, rounded; for checking the Mounting by eye
     char banner[40] = "";  // e.g. Mounting Calibration instructions; shown prominently
 };
 

@@ -519,6 +519,11 @@ void loop() {
     status.fps = fps;
     status.imuHz = imuHz;
     status.atRest = atRest;
+    {
+        // Rounded to 5 degrees so the header redraws only when it really moves.
+        const kd::Vec3 blade = in.pose.orientation.rotate({1, 0, 0});
+        status.bladePitch = 5 * int(lroundf(kd::radToDeg(asinf(kd::clampf(blade.z, -1.f, 1.f))) / 5.f));
+    }
     status.recording = recording;
     if (static_cast<int32_t>(nowMs - bannerUntilMs) >= 0) banner[0] = '\0';
     memcpy(status.banner, banner, sizeof(status.banner));
