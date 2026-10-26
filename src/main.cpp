@@ -22,6 +22,7 @@
 #include "kd/mounting.h"
 #include "kd/noise.h"
 #include "kd/orientation_filter.h"
+#include "kd/pose_readout.h"
 #include "kd/power_governor.h"
 #include "profiles.h"
 #include "sk9822_spi.h"
@@ -669,18 +670,13 @@ void loop() {
     memcpy(shownLines.data(), lines.data(), lines.size() * sizeof(kd::Rgb8));
     status.settings = settings;
     status.changed = lastChanged;
-    status.batteryFraction = battery;
     status.fps = fps;
     status.imuHz = imuHz;
     status.atRest = atRest;
     {
-        // Rounded to 5 degrees so the header redraws only when it really moves.
-        const kd::Vec3 blade = in.pose.orientation.rotate({1, 0, 0});
-        status.bladePitch = 5 * int(lroundf(kd::radToDeg(asinf(kd::clampf(blade.z, -1.f, 1.f))) / 5.f));
-        // Side to side only means something while the Blade is not near vertical (within ~80 deg).
-        status.headingKnown = hypotf(blade.x, blade.y) > 0.17f;
-        // Clockwise seen from above is positive (atan2 counts counter-clockwise).
-        status.bladeHeading = 5 * int(lroundf(-kd::radToDeg(atan2f(blade.y, blade.x)) / 5.f));
+        const kd::PoseReadout r = kd::readout(in.pose);
+        memcpy(status.pos, r.pos, sizeof(status.pos));
+        memcpy(status.rot, r.rot, sizeof(status.rot));
     }
     status.recording = recording;
     status.holdSegments = holdSegments;
