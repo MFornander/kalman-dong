@@ -55,7 +55,7 @@ bool labelsShown = false;
 // What each Status line shows now. This library draws text a pixel at a
 // time (the whole page takes about a second), so a line is redrawn only when
 // its text or highlight changes.
-constexpr int kStatusRows = 9;
+constexpr int kStatusRows = 10;
 char shownLine[kStatusRows][40];
 bool shownHighlight[kStatusRows];
 char shownFooter[48];
@@ -155,6 +155,8 @@ void drawStatus(const Status& s) {
     else
         snprintf(buf, sizeof(buf), "Clouds %.0fx", s.settings.motionValue());
     statusLine(8, buf, s.changed == Setting::Motion);
+    snprintf(buf, sizeof(buf), "Size %.1fm", s.settings.cloudSizeValue());
+    statusLine(9, buf, s.changed == Setting::CloudSize);
 
     drawSegments(4, 6 + 4 * kLineHeight + 12, s.holdSegments);
     snprintf(buf, sizeof(buf), "%s %s%s", s.profile, s.imuChip, s.recording ? " REC" : (s.atRest ? " rest" : ""));

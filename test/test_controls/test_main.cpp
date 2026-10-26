@@ -30,7 +30,7 @@ struct Hand {
 
 }  // namespace
 
-TEST_CASE("quick A cycles Palettes, long A steps Clear Sky") {
+TEST_CASE("quick A cycles Palettes, long A steps cloud size, held A steps Clear Sky") {
     Hand h;
     ControlEvent e = h.tap(0);
     CHECK(e.kind == ControlEvent::Kind::Changed);
@@ -39,11 +39,15 @@ TEST_CASE("quick A cycles Palettes, long A steps Clear Sky") {
     for (size_t i = 1; i < paletteCount(); ++i) h.tap(0);
     CHECK(h.settings.palette == 0);
 
-    float before = h.settings.clearSkyValue();
+    CHECK(h.settings.cloudSizeValue() == doctest::Approx(0.6f));
     e = h.press(0);
-    CHECK(e.changed == Setting::ClearSky);
-    CHECK(h.settings.clearSkyValue() != before);
+    CHECK(e.changed == Setting::CloudSize);
+    CHECK(h.settings.cloudSizeValue() == doctest::Approx(1.2f));
     CHECK(h.settings.palette == 0);  // a long press is not also a quick one
+
+    float before = h.settings.clearSkyValue();
+    CHECK(h.hold(0, 5500).changed == Setting::ClearSky);
+    CHECK(h.settings.clearSkyValue() != before);
 }
 
 TEST_CASE("quick B cycles cloud motion, long B steps brightness, held B steps Girth") {
@@ -171,9 +175,3 @@ TEST_CASE("a press in progress shows half-second segments and what letting go wi
     CHECK(p.onRelease == ButtonTracker::Press::None);  // Held: letting go does nothing
 }
 
-TEST_CASE("holding A past 5 seconds does nothing, yet") {
-    Hand h;
-    Settings before = h.settings;
-    CHECK(h.hold(0, 6000).kind == ControlEvent::Kind::None);
-    CHECK(h.settings == before);
-}

@@ -5,7 +5,7 @@
 // afterwards does nothing).
 //
 //        Quick              Long              Held
-//   A    next Palette       step Clear Sky    -
+//   A    next Palette       cloud size        step Clear Sky
 //   B    cloud motion       step brightness   step Girth
 //   C    Status page        Re-level          Mounting Calibration
 #pragma once
@@ -21,10 +21,12 @@ struct Settings {
     uint8_t brightness = 2;
     uint8_t girth = 1;  // 0.1 m: neighbouring Lines similar, twisting still rolls color
     uint8_t clearSky = 1;
-    uint8_t motion = 0;  // cloud motion: frozen, then 1x and 2x speed
+    uint8_t motion = 0;     // cloud motion: frozen, then 1x and 2x speed
+    uint8_t cloudSize = 1;  // 0.6 m
 
     float brightnessValue() const;  // 0..1
     float motionValue() const;      // how fast the Cloud Field moves: 0 frozen, 1 normal
+    float cloudSizeValue() const;   // m; typical size of one cloud
     float girthValue() const;       // m
     float clearSkyValue() const;    // 0..1 share of the Cloud Field
 
@@ -33,7 +35,7 @@ struct Settings {
 
     bool operator==(const Settings& o) const {
         return palette == o.palette && brightness == o.brightness && girth == o.girth && clearSky == o.clearSky &&
-               motion == o.motion;
+               motion == o.motion && cloudSize == o.cloudSize;
     }
 };
 
@@ -64,7 +66,7 @@ private:
     bool held_ = false;
 };
 
-enum class Setting : uint8_t { None, Palette, ClearSky, Brightness, Girth, Motion };
+enum class Setting : uint8_t { None, Palette, ClearSky, Brightness, Girth, Motion, CloudSize };
 
 struct ControlEvent {
     enum class Kind : uint8_t { None, Changed, WakeDisplay, Relevel, CalibrateMounting };

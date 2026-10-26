@@ -47,7 +47,7 @@ Quick, amber for Long) and what letting go will do.
 
 | Button | Quick            | Long            | Held                 | Bare board | Other builds |
 |--------|------------------|-----------------|----------------------|------------|--------------|
-| A      | next Palette     | step Clear Sky  | -                    | USR3       | USR1         |
+| A      | next Palette     | cloud size: 0.3, 0.6, 1.2, 2.4 m | step Clear Sky | USR3 | USR1 |
 | B      | cloud motion: frozen, 1x, 2x | step brightness | step Girth | USR2 | USR2 |
 | C      | Status page (again to close; closes itself after 30 s) | Re-level | Mounting Calibration | USR1 | USR3 |
 

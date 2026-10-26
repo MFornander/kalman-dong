@@ -10,6 +10,7 @@ const float kBrightnessSteps[] = {0.25f, 0.5f, 0.75f, 1.0f};
 const float kGirthSteps[] = {0.f, 0.1f, 0.2f, 0.4f};
 const float kClearSkySteps[] = {0.f, 0.15f, 0.3f, 0.5f};
 const float kMotionSteps[] = {0.f, 1.f, 2.f};
+const float kCloudSizeSteps[] = {0.3f, 0.6f, 1.2f, 2.4f};
 
 template <typename T, unsigned N>
 constexpr unsigned count(const T (&)[N]) { return N; }
@@ -22,6 +23,7 @@ float Settings::brightnessValue() const { return kBrightnessSteps[brightness % c
 float Settings::girthValue() const { return kGirthSteps[girth % count(kGirthSteps)]; }
 float Settings::clearSkyValue() const { return kClearSkySteps[clearSky % count(kClearSkySteps)]; }
 float Settings::motionValue() const { return kMotionSteps[motion % count(kMotionSteps)]; }
+float Settings::cloudSizeValue() const { return kCloudSizeSteps[cloudSize % count(kCloudSizeSteps)]; }
 
 void Settings::sanitize() {
     palette %= paletteCount();
@@ -29,6 +31,7 @@ void Settings::sanitize() {
     girth %= count(kGirthSteps);
     clearSky %= count(kClearSkySteps);
     motion %= count(kMotionSteps);
+    cloudSize %= count(kCloudSizeSteps);
 }
 
 ButtonTracker::Press ButtonTracker::update(bool down, uint32_t nowMs) {
@@ -85,15 +88,17 @@ Controls::PressInProgress Controls::pressInProgress(uint32_t nowMs) const {
 ControlEvent Controls::apply(Button b, ButtonTracker::Press p, uint32_t nowMs) {
     if (p == ButtonTracker::Press::Held) {
         if (b == Button::C) return {ControlEvent::Kind::CalibrateMounting, Setting::None};
-        if (b == Button::A) return {};  // no Held action yet
     }
     const bool isLong = p == ButtonTracker::Press::Long;
     ControlEvent e{ControlEvent::Kind::Changed, Setting::None};
     switch (b) {
         case Button::A:
-            if (isLong) {
+            if (p == ButtonTracker::Press::Held) {
                 settings_.clearSky = next(settings_.clearSky, count(kClearSkySteps));
                 e.changed = Setting::ClearSky;
+            } else if (isLong) {
+                settings_.cloudSize = next(settings_.cloudSize, count(kCloudSizeSteps));
+                e.changed = Setting::CloudSize;
             } else {
                 settings_.palette = static_cast<uint8_t>((settings_.palette + 1) % paletteCount());
                 e.changed = Setting::Palette;

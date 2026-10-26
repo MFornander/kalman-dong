@@ -458,7 +458,8 @@ void loop() {
     kd::ControlEvent e = controls.update(down[0], down[1], down[2], nowMs);
     if (e.kind != kd::ControlEvent::Kind::None) {
         static const char* const kKinds[] = {"none", "changed", "wake display", "re-level", "calibrate mounting"};
-        static const char* const kSettings[] = {"", "Palette", "Clear Sky", "brightness", "Girth", "cloud motion"};
+        static const char* const kSettings[] = {"",      "Palette",      "Clear Sky",  "brightness",
+                                                "Girth", "cloud motion", "cloud size"};
         Serial.printf("# control: %s %s -> palette %s, brightness %.0f%%, girth %.2f m, clear sky %.0f%%\n",
                       kKinds[static_cast<int>(e.kind)], kSettings[static_cast<int>(e.changed)],
                       kd::palette(settings.palette).name, settings.brightnessValue() * 100, settings.girthValue(),
@@ -490,6 +491,9 @@ void loop() {
                     else
                         snprintf(banner, sizeof(banner), "Clouds\n%.0fx speed", settings.motionValue());
                     break;
+                case kd::Setting::CloudSize:
+                    snprintf(banner, sizeof(banner), "Cloud size\n%.1f m", settings.cloudSizeValue());
+                    break;
                 case kd::Setting::None:
                     snprintf(banner, sizeof(banner), "%s", e.kind == kd::ControlEvent::Kind::Relevel ? "Re-leveled" : "");
                     break;
@@ -506,7 +510,7 @@ void loop() {
     const int holdSegments = pressNow.button >= 0 ? pressNow.segments : -1;
     if (pressNow.button >= 0) {
         static const char* const kOnRelease[3][3] = {
-            {"Release:\npalette", "Release:\nclear sky", "Release:\nnothing"},
+            {"Release:\npalette", "Release:\ncloud size", ""},
             {"Release:\nclouds", "Release:\nbrightness", ""},
             {"Release:\nstatus", "Release:\nre-level", ""},
         };

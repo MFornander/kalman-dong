@@ -67,6 +67,7 @@ void Renderer::render(const FrameInput& in, const Settings& settings, Rgb8* line
     const size_t lineCount = geometry_.lineCount();
     const float girth = settings.girthValue();
     field_.setClearSky(settings.clearSkyValue());
+    field_.setCloudSize(settings.cloudSizeValue());
 
     const bool igniting = in.ignitionProgress < 1.f;
     const float fade = igniting ? 0.f : clampf(in.sinceIgnition / kIgnitionFade, 0.f, 1.f);
