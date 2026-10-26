@@ -50,6 +50,11 @@ struct ReplayResult {
     // where the accelerometer shows true down: the only ground truth there is.
     float quietTiltMeanDeg = 0;
     int quietSamples = 0;
+    // Travel: these recordings are hand-held sweeps and swings with no
+    // deliberate moves of the Hilt, so whatever Travel builds up is error.
+    float finalTravel = 0;  // m, at the end
+    float worstTravel = 0;  // m, at any point
+    float worstShift = 0;   // m; Travel plus Push, at any point
 };
 
 ReplayResult replay(const std::vector<Row>& rows, OrientationFilter& filter) {
@@ -76,7 +81,7 @@ ReplayResult replay(const std::vector<Row>& rows, OrientationFilter& filter) {
             result.learnedBias = tracker.biasGeneration() > 0;
         }
         Pose p = tracker.pose();
-        result.finite &= std::isfinite(p.orientation.w) && std::isfinite(p.push.x);
+        result.finite &= std::isfinite(p.orientation.w) && std::isfinite(p.displacement.x);
         if (result.ignited && !haveHeading && t > result.ignitedAt + 1.0) {
             heading0 = heading(p.orientation);
             haveHeading = true;
@@ -92,6 +97,9 @@ ReplayResult replay(const std::vector<Row>& rows, OrientationFilter& filter) {
             result.quietTiltMeanDeg += radToDeg(std::acos(clampf(upEstimate.dot(s.accel.normalized()), -1.f, 1.f)));
             ++result.quietSamples;
         }
+        result.worstTravel = std::fmax(result.worstTravel, tracker.travel().norm());
+        result.worstShift = std::fmax(result.worstShift, p.displacement.norm());
+        result.finalTravel = tracker.travel().norm();
         if (tracker.ignited() && tracker.restSeconds() > 1.f) {
             Vec3 upEstimate = p.orientation.conj().rotate({0, 0, 1});
             float err = radToDeg(std::acos(clampf(upEstimate.dot(s.accel.normalized()), -1.f, 1.f)));
@@ -147,11 +155,18 @@ TEST_CASE("every recording in test/data replays cleanly") {
             // Recordings that start with the Dong lying still must ignite by
             // learning the gyro bias, not by timing out.
             if (entry.path().filename().string().rfind("bench-desk", 0) == 0) CHECK(r.learnedBias);
+            // No recording here has a deliberate move of the Hilt, so none
+            // should leave the Dong moved through the clouds.
+            CHECK(r.finalTravel < 0.1f);
+            const std::string name = entry.path().filename().string();
+            const bool lyingStill = name.find("desk") != std::string::npos || name.find("still") != std::string::npos;
+            if (lyingStill) CHECK(r.worstShift < 0.01f);
             MESSAGE(entry.path().filename().string()
                     << ": " << std::string(filter->name()) << " ignited at " << r.ignitedAt << " s, worst tilt at Rest "
                     << r.worstRestTiltDeg << " deg, heading change " << r.headingDriftDeg
                     << " deg, tilt error at quiet moments in motion " << r.quietTiltMeanDeg << " deg ("
-                    << r.quietSamples << " samples)");
+                    << r.quietSamples << " samples), Travel " << r.finalTravel << " m at the end, "
+                    << r.worstTravel << " m at worst; Travel plus Push " << r.worstShift << " m at worst");
         }
     }
 }

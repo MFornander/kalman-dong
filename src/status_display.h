@@ -16,21 +16,24 @@ struct Status {
     kd::Setting changed = kd::Setting::None;  // highlighted after a button press
     const char* profile = "";
     const char* imuChip = "";
-    float batteryFraction = -1.f;
     float fps = 0.f;
     float imuHz = 0.f;
     bool atRest = false;
     bool recording = false;
-    int bladePitch = 0;      // degrees above level, rounded to 5
-    int bladeHeading = 0;    // degrees side to side from the Re-level heading, clockwise positive, rounded to 5
-    bool headingKnown = false;  // false while the Blade points nearly straight up or down
+    // The Blade view's header, from kd::readout() (kd/pose_readout.h).
+    int pos[3] = {};
+    int rot[3] = {};
     char banner[40] = "";  // e.g. Mounting Calibration instructions; shown prominently
     int holdSegments = -1;  // while a button is held: half-second segments filled
+    bool asleep = false;    // idle for kSleepAfterMs: the Blade view is off
 };
 
 namespace status_display {
 
 constexpr uint32_t kAwakeMs = 30000;
+// The screen turns off once the Dong has been lying still, with no button
+// pressed, for this long; moving it or pressing a button brings it back.
+constexpr uint32_t kSleepAfterMs = 60000;
 
 bool begin();
 

@@ -126,12 +126,22 @@ on the left, tip on the right, Line 0 on top) exactly as they would go to the
 Pixels, after brightness and the Power Budget. The board stands in for the
 Hilt; the right edge of the screen is the direction the Blade points.
 
-At the tip end, a header reads upright with the Blade pointing up: **TIP**
-(degrees above level) and **SIDE** (degrees from the Re-level heading,
-clockwise seen from above is positive; `--` near vertical). SIDE is where
-heading drift, and so the orientation filter, shows. While a button is held
-the header shows what letting go will do instead, and setting changes show
-there briefly. The Status page (C quick) is upright in the same pose.
+At the tip end, a header reads upright with the Blade pointing up, as a grid
+of x, y and z:
+
+- **POS** is how far the Dong has moved through the clouds (Travel plus Push),
+  in centimetres, wrapping every 10 m to -500..499.
+- **ROT** is how it has turned since Ignition or the last Re-level, as roll,
+  tip up and turn in percent of a half turn (90° = 50, 180° = 100). Positive
+  is rolled clockwise looking out along the Blade, tip raised, and turned
+  clockwise seen from above. The turn is where heading drift, and so the
+  orientation filter, shows.
+
+While a button is held the header shows what letting go will do instead, and
+setting changes show there briefly. The Status page (C quick) is upright in
+the same pose, with the same grid at the top. The screen turns off after 60 s
+of lying still with no button pressed, and comes back when the board moves
+or a button is pressed.
 
 The quickest route is the guided bring-up script: it flashes, checks rates
 and filter costs, runs Mounting Calibration and verifies it, records swings

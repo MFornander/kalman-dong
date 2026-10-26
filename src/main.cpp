@@ -22,6 +22,7 @@
 #include "kd/mounting.h"
 #include "kd/noise.h"
 #include "kd/orientation_filter.h"
+#include "kd/pose_readout.h"
 #include "kd/power_governor.h"
 #include "profiles.h"
 #include "sk9822_spi.h"
@@ -106,6 +107,10 @@ Status status;
 std::vector<kd::Rgb8> shownLines;
 volatile bool wakeDisplay = true;
 volatile bool toggleStatusPage = false;  // C quick: open the Status page, or close it
+// Counted on the board, so 'i' can show whether presses landed even when
+// nothing was reading the serial port at the time.
+uint32_t quickCCount = 0;                // Quick presses of C decoded
+volatile uint32_t statusToggleCount = 0;  // ... and Status page toggles the display task applied
 
 // Per-stage frame timing (us, smoothed), printed by 'i'.
 struct FrameTiming {
@@ -189,6 +194,7 @@ void displayTask(void*) {
         uint32_t now = millis();
         if (toggleStatusPage) {
             toggleStatusPage = false;
+            statusToggleCount = statusToggleCount + 1;
             status_display::toggle(snapshot, now);
         } else if (wakeDisplay) {
             wakeDisplay = false;
@@ -308,6 +314,8 @@ void handleSerial() {
                     (unsigned long)leds.sendUs(), timing.total, tracker.ignited(), tracker.restSeconds(),
                     (unsigned long)timing.worstUs);
                 timing.worstUs = 0;
+                Serial.printf("# buttons: %lu quick C presses, %lu Status page toggles (including 'w')\n",
+                              (unsigned long)quickCCount, (unsigned long)statusToggleCount);
                 Serial.printf("# imu us: read %.0f track %.0f (filter %s)\n", imuReadUs, imuTrackUs,
                               tracker.filter().name());
                 {
@@ -464,6 +472,7 @@ void loop() {
     static bool calibrating = false;
     static char banner[sizeof(Status::banner)] = "";
     static uint32_t bannerUntilMs = 0;
+    static uint32_t lastActiveMs = 0;  // a button pressed or the Dong moving; see kSleepAfterMs
 
     const int64_t frameStartUs = esp_timer_get_time();
     const uint32_t nowMs = millis();
@@ -480,8 +489,9 @@ void loop() {
         static const char* const kKinds[] = {"none", "changed", "wake display", "re-level", "calibrate mounting"};
         static const char* const kSettings[] = {"",      "Palette",      "Clear Sky",  "brightness",
                                                 "Girth", "cloud motion", "cloud size"};
-        Serial.printf("# control: %s %s -> palette %s, brightness %.0f%%, girth %.2f m, clear sky %.0f%%\n",
-                      kKinds[static_cast<int>(e.kind)], kSettings[static_cast<int>(e.changed)],
+        lastActiveMs = nowMs;
+        Serial.printf("# control at %lu ms: %s %s -> palette %s, brightness %.0f%%, girth %.2f m, clear sky %.0f%%\n",
+                      (unsigned long)nowMs, kKinds[static_cast<int>(e.kind)], kSettings[static_cast<int>(e.changed)],
                       kd::palette(settings.palette).name, settings.brightnessValue() * 100, settings.girthValue(),
                       settings.clearSkyValue() * 100);
         lastChanged = e.changed;
@@ -520,6 +530,7 @@ void loop() {
             }
             bannerUntilMs = nowMs + 2000;
         } else if (e.kind == kd::ControlEvent::Kind::WakeDisplay) {
+            ++quickCCount;
             toggleStatusPage = true;
         } else {
             wakeDisplay = true;
@@ -532,11 +543,13 @@ void loop() {
     while (buttonLog.pop(sample)) {
         for (int i = 0; i < 3; ++i)
             if (((sample.down ^ buttonsDown) >> i) & 1)
-                Serial.printf("# button %c %s\n", "ABC"[i], (sample.down >> i) & 1 ? "down" : "up");
+                Serial.printf("# button %c %s at %lu ms\n", "ABC"[i], (sample.down >> i) & 1 ? "down" : "up",
+                              (unsigned long)sample.ms);
         buttonsDown = sample.down;
         for (const kd::ControlEvent& e : controls.update(sample.down & 1, sample.down & 2, sample.down & 4, sample.ms))
             onControl(e);
     }
+    if (buttonsDown) lastActiveMs = nowMs;
     const uint32_t buttonsMs = millis();
     for (const kd::ControlEvent& e : controls.update(buttonsDown & 1, buttonsDown & 2, buttonsDown & 4, buttonsMs))
         onControl(e);
@@ -574,9 +587,11 @@ void loop() {
     in.localTime = in.showTime;
     in.batteryFraction = battery;
     bool atRest = false;
+    kd::Quat rotZero;
     if (imuOk) {
         xSemaphoreTake(trackerLock, portMAX_DELAY);
         in.pose = tracker.pose(lookahead);
+        rotZero = tracker.zeroOrientation();
         in.ignitionProgress = tracker.ignitionProgress();
         in.restSeconds = tracker.restSeconds();
         atRest = tracker.atRest();
@@ -669,18 +684,15 @@ void loop() {
     memcpy(shownLines.data(), lines.data(), lines.size() * sizeof(kd::Rgb8));
     status.settings = settings;
     status.changed = lastChanged;
-    status.batteryFraction = battery;
     status.fps = fps;
     status.imuHz = imuHz;
     status.atRest = atRest;
+    if (!atRest || in.calibration.active) lastActiveMs = nowMs;
+    status.asleep = nowMs - lastActiveMs >= status_display::kSleepAfterMs;
     {
-        // Rounded to 5 degrees so the header redraws only when it really moves.
-        const kd::Vec3 blade = in.pose.orientation.rotate({1, 0, 0});
-        status.bladePitch = 5 * int(lroundf(kd::radToDeg(asinf(kd::clampf(blade.z, -1.f, 1.f))) / 5.f));
-        // Side to side only means something while the Blade is not near vertical (within ~80 deg).
-        status.headingKnown = hypotf(blade.x, blade.y) > 0.17f;
-        // Clockwise seen from above is positive (atan2 counts counter-clockwise).
-        status.bladeHeading = 5 * int(lroundf(-kd::radToDeg(atan2f(blade.y, blade.x)) / 5.f));
+        const kd::PoseReadout r = kd::readout(in.pose, rotZero);
+        memcpy(status.pos, r.pos, sizeof(status.pos));
+        memcpy(status.rot, r.rot, sizeof(status.rot));
     }
     status.recording = recording;
     status.holdSegments = holdSegments;

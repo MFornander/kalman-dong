@@ -8,11 +8,12 @@
 
 namespace kd {
 
-// The Dong's placement in the Cloud Field: orientation only, Hilt at the
-// origin, plus the temporary Push. See docs/adr/0002-orientation-only-anchoring.md.
+// The Dong's placement in the Cloud Field: its orientation, and how far the
+// Hilt has moved from the origin by Travel plus any Push. See
+// docs/adr/0002-orientation-only-anchoring.md.
 struct Pose {
     Quat orientation;  // body -> Cloud Field frame (Z up, heading set by Re-level)
-    Vec3 push;         // m; current Push displacement of the Dong
+    Vec3 displacement;  // m; Travel plus Push
 };
 
 class BladeGeometry {
@@ -36,7 +37,7 @@ public:
 
     // Same point in the Cloud Field, for the Dong at `pose`.
     Vec3 fieldPoint(const Pose& pose, size_t line, float distance, float girth) const {
-        return pose.orientation.rotate(bodyPoint(line, distance, girth)) + pose.push;
+        return pose.orientation.rotate(bodyPoint(line, distance, girth)) + pose.displacement;
     }
 
 private:

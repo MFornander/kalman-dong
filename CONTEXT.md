@@ -56,12 +56,16 @@ _Avoid_: Radius, spread, line offset
 The thin regions between clouds in the Cloud Field, shown dimmer but still colored — never dark. How much of the Cloud Field is Clear Sky is adjustable.
 _Avoid_: Gap, background, black
 
+**Travel**:
+How far the Dong has moved through the Cloud Field by deliberate level moves of the Hilt without rotating: each move is kept, at a little over half its size, once the Hilt comes to a stop. Cleared by Re-level. Local to each Dong.
+_Avoid_: Position, translation, offset
+
 **Push**:
-A brief displacement of the Cloud Field relative to the Blade when the Dong is thrust or slid without rotating, springing back to rest within about a second. Local to each Dong.
+A brief displacement of the Cloud Field relative to the Blade from moves that aren't kept as Travel (small jiggles, moving up or down, moves cut short by a swing), springing back to rest within about a second. Local to each Dong.
 _Avoid_: Translation, offset, nudge
 
 **Local Layer**:
-Anything drawn on top of the Cloud Field that depends on one Dong's own history (such as Push) and therefore is never shared between Dongs.
+Anything drawn on top of the Cloud Field that depends on one Dong's own history (such as Travel and Push) and therefore is never shared between Dongs.
 _Avoid_: Overlay, effect
 
 **Ignition**:

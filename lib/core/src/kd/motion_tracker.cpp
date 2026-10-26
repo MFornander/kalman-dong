@@ -19,8 +19,9 @@ void MotionTracker::begin(const Vec3& savedBias) {
     stillness_.reset();
     learnedThisRest_ = 0;
     reference_ = {};
+    zero_ = {};
     lastRate_ = {};
-    pushPos_ = pushVel_ = {};
+    clearDisplacement();
 }
 
 void MotionTracker::ignite(const Vec3& accel) {
@@ -28,7 +29,8 @@ void MotionTracker::ignite(const Vec3& accel) {
     q = q.yawPart().conj() * q;  // start facing the reference heading
     filter_->reset(q);
     reference_ = {};
-    pushPos_ = pushVel_ = {};
+    zero_ = filter_->orientation();
+    clearDisplacement();
     ignited_ = true;
     ignitionProgress_ = 1.f;
 }
@@ -69,28 +71,79 @@ void MotionTracker::update(const ImuSample& sample) {
             ++biasGeneration_;
     }
 
-    updatePush(s.accel, s.dt);
+    updateDisplacement(s.accel, rate, s.dt);
 }
 
-void MotionTracker::updatePush(const Vec3& accel, float dt) {
-    Vec3 linear = filter_->orientation().rotate(accel) - Vec3{0, 0, kGravity};
-    float mag = linear.norm();
-    Vec3 drive = mag > settings_.pushDeadband ? linear * ((mag - settings_.pushDeadband) / mag) : Vec3{};
+void MotionTracker::updateDisplacement(const Vec3& accel, const Vec3& rate, float dt) {
+    const Vec3 linear = filter_->orientation().rotate(accel) - Vec3{0, 0, kGravity};
+    const float mag = linear.norm();
+    const Vec3 drive =
+        mag > settings_.strokeDeadband ? linear * ((mag - settings_.strokeDeadband) / mag) : Vec3{};
+    linearSmooth_ += (mag - linearSmooth_) * (dt / (0.08f + dt));
+    const float spin = rate.norm();
+    sinceRotating_ = spin > settings_.strokeGateRate ? 0.f : sinceRotating_ + dt;
+    const bool rotating = sinceRotating_ < settings_.strokeGateHold;
 
-    float w = 2.f * kPi * settings_.pushHz;
-    Vec3 acc = drive * settings_.pushGain - pushVel_ * (2.f * w) - pushPos_ * (w * w);
-    pushVel_ += acc * dt;
-    pushPos_ += pushVel_ * dt;
-
-    float d = pushPos_.norm();
-    if (d > settings_.pushMax) {
-        pushPos_ *= settings_.pushMax / d;
-        // Stop pushing further out; keep any velocity heading back in.
-        Vec3 out = pushPos_ * (1.f / settings_.pushMax);
-        float outward = pushVel_.dot(out);
-        if (outward > 0.f) pushVel_ -= out * outward;
+    if (inStroke_) {
+        if (rotating) {
+            endStroke(false);
+        } else {
+            strokeVel_ += drive * dt;
+            strokePos_ += strokeVel_ * dt;
+            strokeTime_ += dt;
+            const float d = strokePos_.norm();
+            if (d > settings_.strokeMax) {
+                strokePos_ *= settings_.strokeMax / d;
+                const Vec3 out = strokePos_ * (1.f / settings_.strokeMax);
+                const float outward = strokeVel_.dot(out);
+                if (outward > 0.f) strokeVel_ -= out * outward;
+            }
+            const bool calm = linearSmooth_ < settings_.strokeCalmAccel && spin < settings_.strokeCalmRate;
+            calmTime_ = calm ? calmTime_ + dt : 0.f;
+            if (calmTime_ >= settings_.strokeCalmHold)
+                endStroke(true);
+            else if (strokeTime_ > settings_.strokeMaxTime)
+                endStroke(false);
+        }
+    } else if (!rotating && mag > settings_.strokeDeadband) {
+        inStroke_ = true;
+        strokeVel_ = drive * dt;
+        strokePos_ = strokeVel_ * dt;
+        strokeTime_ = dt;
+        calmTime_ = 0.f;
     }
+
+    // Push springs back to rest.
+    const float w = 2.f * kPi * settings_.pushHz;
+    pushVel_ += (pushVel_ * (-2.f * w) - pushPos_ * (w * w)) * dt;
+    pushPos_ += pushVel_ * dt;
 }
+
+void MotionTracker::endStroke(bool keep) {
+    const Vec3 shown = strokePos_ * settings_.travelGain;
+    const Vec3 level{shown.x, shown.y, 0.f};
+    if (keep && Vec3{strokePos_.x, strokePos_.y, 0.f}.norm() >= settings_.strokeMin) {
+        travel_ += level;
+        pushPos_ += shown - level;
+    } else {
+        pushPos_ += shown;
+    }
+    inStroke_ = false;
+    strokeVel_ = strokePos_ = {};
+    strokeTime_ = calmTime_ = 0.f;
+}
+
+void MotionTracker::clearDisplacement() {
+    travel_ = {};
+    inStroke_ = false;
+    strokeVel_ = strokePos_ = {};
+    strokeTime_ = calmTime_ = 0.f;
+    sinceRotating_ = settings_.strokeGateHold;
+    linearSmooth_ = 0.f;
+    pushPos_ = pushVel_ = {};
+}
+
+Vec3 MotionTracker::travel() const { return reference_.conj().rotate(travel_); }
 
 void MotionTracker::setFilter(OrientationFilter& filter) {
     if (&filter == filter_) return;
@@ -100,7 +153,10 @@ void MotionTracker::setFilter(OrientationFilter& filter) {
 }
 
 void MotionTracker::relevel() {
-    if (ignited_) reference_ = filter_->orientation().yawPart();
+    if (!ignited_) return;
+    reference_ = filter_->orientation().yawPart();
+    zero_ = reference_.conj() * filter_->orientation();
+    clearDisplacement();
 }
 
 Pose MotionTracker::pose(float lookahead) const {
@@ -108,7 +164,8 @@ Pose MotionTracker::pose(float lookahead) const {
     Quat q = filter_->orientation();
     if (lookahead > 0.f) q = (q * Quat::fromRotationVector(lastRate_ * lookahead)).normalized();
     Quat toField = reference_.conj();
-    return {toField * q, toField.rotate(pushPos_)};
+    const Vec3 stroke = inStroke_ ? strokePos_ * settings_.travelGain : Vec3{};
+    return {toField * q, toField.rotate(travel_ + stroke + pushPos_)};
 }
 
 }  // namespace kd

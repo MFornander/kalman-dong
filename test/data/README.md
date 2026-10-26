@@ -9,9 +9,10 @@ pio test -e native -f test_replay -v
 ```
 
 That prints, per recording and filter: when Ignition finished, the worst tilt
-error at Rest, the heading change, and the tilt error at quiet moments in
+error at Rest, the heading change, the tilt error at quiet moments in
 motion (slow rotation, |accel| near 1 g, where the accelerometer shows true
-down). A new filter added to the bank shows up there with no other change.
+down), and how much Travel built up. None of these recordings moves the Hilt
+deliberately, so any Travel is error. Today it stays at 0 m on all four. A new filter added to the bank shows up there with no other change.
 
 ## The recordings
 
