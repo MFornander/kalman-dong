@@ -1,8 +1,10 @@
 // Orientation filters: fuse gyro and accelerometer into an orientation.
 //
-// Two implementations are planned behind this interface: Mahony first, then
-// a Kalman filter, compared on recorded swings. Heading cannot be corrected
-// by a 6-axis IMU; gyro bias is handled by MotionTracker, which passes in
+// Implementations are interchangeable: MotionTracker takes any of them and
+// can swap them live. FilterBank (filter_bank.h) lists them all and names the
+// default (Mahony; the Kalman filter tied it on real recordings but drifts
+// more at rest and costs twice the CPU). Heading cannot be corrected by a
+// 6-axis IMU; gyro bias is handled by MotionTracker, which passes in
 // bias-corrected rates.
 #pragma once
 

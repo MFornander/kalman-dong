@@ -46,19 +46,20 @@ bool mountingFromAxisMap(const BodyAxisMap& map, Quat& sensorToBody) {
 void MountingCalibration::begin() {
     step_ = Step::TipUp;
     stillness_.reset();
+    havePrevious_ = false;
     turned_ = false;
     failure_ = "";
 }
 
 float MountingCalibration::holdProgress() const {
-    if (!active() || (step_ == Step::LineZeroUp && !turned_)) return 0.f;
+    if (!active() || !turned_) return 0.f;
     return clampf(stillness_.stillTime() / kHoldSeconds, 0.f, 1.f);
 }
 
 const char* MountingCalibration::instruction() const {
     switch (step_) {
-        case Step::TipUp: return "Tip straight up, hold";
-        case Step::LineZeroUp: return "Line 0 to the sky, hold";
+        case Step::TipUp: return turned_ ? "Blade at the ceiling: hold" : "Point the Blade at the ceiling";
+        case Step::LineZeroUp: return turned_ ? "Blade level, Line 0 on top: hold" : "Blade level, Line 0 on top";
         case Step::Done: return "Mounting saved";
         case Step::Failed: return failure_;
     }
@@ -69,8 +70,15 @@ void MountingCalibration::update(const Vec3& sensorGyro, const Vec3& sensorAccel
     if (!active()) return;
     stillness_.update(sensorGyro, sensorAccel, dt);
 
-    if (step_ == Step::LineZeroUp && !turned_) {
-        float turn = radToDeg(std::acos(clampf(stillness_.recentAccel().normalized().dot(tipUp_), -1.f, 1.f)));
+    // A pose only counts once the Dong has been turned into it, so the pose
+    // it happened to be in when calibration began (or the previous pose) is
+    // never recorded by accident.
+    if (!havePrevious_) {
+        previousUp_ = sensorAccel.normalized();
+        havePrevious_ = true;
+    }
+    if (!turned_) {
+        float turn = radToDeg(std::acos(clampf(stillness_.recentAccel().normalized().dot(previousUp_), -1.f, 1.f)));
         if (turn < kMinTurnDeg) return;
         turned_ = true;
         stillness_.reset();
@@ -84,7 +92,7 @@ void MountingCalibration::update(const Vec3& sensorGyro, const Vec3& sensorAccel
         return;
     }
     if (step_ == Step::TipUp) {
-        tipUp_ = up.normalized();
+        tipUp_ = previousUp_ = up.normalized();
         step_ = Step::LineZeroUp;
         turned_ = false;
         stillness_.reset();

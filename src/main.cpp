@@ -8,10 +8,14 @@
 
 #include <Arduino.h>
 #include <Wire.h>
+#include <driver/gpio.h>
+#include <soc/gpio_reg.h>
+#include <soc/io_mux_reg.h>
 
 #include <vector>
 
 #include "kd/controls.h"
+#include "kd/filter_bank.h"
 #include "imu_lsm6.h"
 #include "kd/motion_tracker.h"
 #include "kd/mounting.h"
@@ -31,9 +35,9 @@ namespace {
 constexpr int kImuSda = 5;
 constexpr int kImuScl = 6;
 constexpr int kImuInt1 = 41;
-constexpr int kButtonA = 43;
-constexpr int kButtonB = 44;
-constexpr int kButtonC = 11;
+constexpr int kButtonA = BUTTON_A_PIN;  // see profiles.h
+constexpr int kButtonB = BUTTON_B_PIN;
+constexpr int kButtonC = BUTTON_C_PIN;
 
 constexpr uint32_t kMinFrameUs = 1000000 / 240;  // cap at 240 fps
 constexpr uint32_t kBiasSaveIntervalMs = 60000;   // spare the flash
@@ -43,9 +47,17 @@ constexpr uint32_t kBatteryPeriodMs = 500;
 const kd::DongProfile& profile = dongProfile();
 
 // Motion: written by the IMU task, read by the render loop, under trackerLock.
-kd::MahonyFilter mahony;
-kd::KalmanFilter kalman;
-kd::MotionTracker tracker(mahony);
+// Orientation filters (kd/filter_bank.h). Mahony unless the build names one,
+// e.g. build_flags = -DKD_FILTER=Kalman; serial 'f' cycles them live.
+#define KD_STRINGIFY2(x) #x
+#define KD_STRINGIFY(x) KD_STRINGIFY2(x)
+#ifdef KD_FILTER
+constexpr const char* kBuildFilter = KD_STRINGIFY(KD_FILTER);
+#else
+constexpr const char* kBuildFilter = kd::kDefaultFilter;
+#endif
+kd::FilterBank filters;
+kd::MotionTracker tracker(filters.byName(kBuildFilter));
 SemaphoreHandle_t trackerLock;
 SemaphoreHandle_t imuSignal;
 ImuLsm6 imu;
@@ -79,6 +91,7 @@ portMUX_TYPE statusMux = portMUX_INITIALIZER_UNLOCKED;
 Status status;
 std::vector<kd::Rgb8> shownLines;
 volatile bool wakeDisplay = true;
+volatile bool toggleStatusPage = false;  // C quick: open the Status page, or close it
 
 // Per-stage frame timing (us, smoothed), printed by 'i'.
 struct FrameTiming {
@@ -158,7 +171,10 @@ void displayTask(void*) {
         memcpy(linesCopy.data(), shownLines.data(), linesCopy.size() * sizeof(kd::Rgb8));
         portEXIT_CRITICAL(&statusMux);
         uint32_t now = millis();
-        if (wakeDisplay) {
+        if (toggleStatusPage) {
+            toggleStatusPage = false;
+            status_display::toggle(snapshot, now);
+        } else if (wakeDisplay) {
             wakeDisplay = false;
             status_display::wake(snapshot, now);
         } else {
@@ -220,10 +236,9 @@ void handleSerial() {
             case 'a':
                 printAxes = !printAxes;
                 break;
-            case 'f': {  // A/B the orientation filters
+            case 'f': {  // next orientation filter
                 xSemaphoreTake(trackerLock, portMAX_DELAY);
-                bool toKalman = &tracker.filter() == &mahony;
-                tracker.setFilter(toKalman ? static_cast<kd::OrientationFilter&>(kalman) : mahony);
+                tracker.setFilter(filters.next(tracker.filter()));
                 xSemaphoreGive(trackerLock);
                 Serial.printf("# filter %s\n", tracker.filter().name());
                 break;
@@ -250,6 +265,19 @@ void handleSerial() {
             case 'c':
                 startCalibration();
                 break;
+            case 'w':  // as if C were pressed: open or close the Status page
+                toggleStatusPage = true;
+                break;
+            case 'p':  // raw button levels (0 = pressed), and how GPIO43 is wired inside the chip
+                Serial.printf("# buttons A(gpio%d)=%d B(gpio%d)=%d C(gpio%d)=%d\n", kButtonA,
+                              gpio_get_level(static_cast<gpio_num_t>(kButtonA)), kButtonB,
+                              gpio_get_level(static_cast<gpio_num_t>(kButtonB)), kButtonC,
+                              gpio_get_level(static_cast<gpio_num_t>(kButtonC)));
+                Serial.printf("# gpio43 iomux=0x%08lx outsel=0x%08lx enable1=0x%08lx\n",
+                              (unsigned long)REG_READ(IO_MUX_GPIO43_REG),
+                              (unsigned long)REG_READ(GPIO_FUNC43_OUT_SEL_CFG_REG),
+                              (unsigned long)REG_READ(GPIO_ENABLE1_REG));
+                break;
             case 'i':
                 Serial.printf("# profile=%s chip=%s filter=%s imu=%.0fHz fps=%.0f bias=%.4f,%.4f,%.4f\n",
                               profile.name, imu.chipName(), tracker.filter().name(), imuHz, status.fps,
@@ -264,7 +292,9 @@ void handleSerial() {
                 {
                     uint32_t textUs, barsUs;
                     status_display::drawTimes(textUs, barsUs);
-                    Serial.printf("# display us: text %lu bars %lu\n", (unsigned long)textUs, (unsigned long)barsUs);
+                    Serial.printf("# display us: text %lu bars %lu status %lu, page %s\n", (unsigned long)textUs,
+                                  (unsigned long)barsUs, (unsigned long)status_display::statusDrawUs(),
+                                  status_display::pageName());
                 }
                 break;
             default:
@@ -336,9 +366,15 @@ float readBattery(float previous) {
 
 void setup() {
     Serial.begin(921600);
-    pinMode(kButtonA, INPUT_PULLUP);
-    pinMode(kButtonB, INPUT_PULLUP);
-    pinMode(kButtonC, INPUT_PULLUP);
+    // Buttons go straight through ESP-IDF. GPIO43 (USR1) boots as UART0's TX
+    // and the Arduino core keeps it registered to the UART, so it must be
+    // reset to plain GPIO (detaching the UART) before it reads a press.
+    for (int pin : {kButtonA, kButtonB, kButtonC}) {
+        const gpio_num_t g = static_cast<gpio_num_t>(pin);
+        gpio_reset_pin(g);
+        gpio_set_direction(g, GPIO_MODE_INPUT);
+        gpio_set_pull_mode(g, GPIO_PULLUP_ONLY);
+    }
 
     store::begin();
     settings = store::loadSettings();
@@ -409,8 +445,24 @@ void loop() {
         lastAxisPrintMs = nowMs;
     }
 
-    kd::ControlEvent e = controls.update(!digitalRead(kButtonA), !digitalRead(kButtonB), !digitalRead(kButtonC), nowMs);
+    const bool down[3] = {gpio_get_level(static_cast<gpio_num_t>(kButtonA)) == 0,
+                          gpio_get_level(static_cast<gpio_num_t>(kButtonB)) == 0,
+                          gpio_get_level(static_cast<gpio_num_t>(kButtonC)) == 0};
+    static bool wasDown[3] = {false, false, false};
+    for (int i = 0; i < 3; ++i) {
+        if (down[i] != wasDown[i]) {
+            wasDown[i] = down[i];
+            Serial.printf("# button %c %s\n", "ABC"[i], down[i] ? "down" : "up");
+        }
+    }
+    kd::ControlEvent e = controls.update(down[0], down[1], down[2], nowMs);
     if (e.kind != kd::ControlEvent::Kind::None) {
+        static const char* const kKinds[] = {"none", "changed", "wake display", "re-level", "calibrate mounting"};
+        static const char* const kSettings[] = {"", "Palette", "Clear Sky", "brightness", "Girth"};
+        Serial.printf("# control: %s %s -> palette %s, brightness %.0f%%, girth %.2f m, clear sky %.0f%%\n",
+                      kKinds[static_cast<int>(e.kind)], kSettings[static_cast<int>(e.changed)],
+                      kd::palette(settings.palette).name, settings.brightnessValue() * 100, settings.girthValue(),
+                      settings.clearSkyValue() * 100);
         lastChanged = e.changed;
         if (e.kind == kd::ControlEvent::Kind::Relevel) {
             xSemaphoreTake(trackerLock, portMAX_DELAY);
@@ -418,7 +470,46 @@ void loop() {
             xSemaphoreGive(trackerLock);
         }
         if (e.kind == kd::ControlEvent::Kind::CalibrateMounting) startCalibration();
-        wakeDisplay = true;
+        // In the Blade view a change shows in the header and the bars stay in
+        // sight; only C's short press (its job) opens the Status page.
+        if (status_display::bladeView() && e.kind != kd::ControlEvent::Kind::WakeDisplay) {
+            switch (e.changed) {
+                case kd::Setting::Palette:
+                    snprintf(banner, sizeof(banner), "Palette\n%s", kd::palette(settings.palette).name);
+                    break;
+                case kd::Setting::Brightness:
+                    snprintf(banner, sizeof(banner), "Brightness\n%.0f%%", settings.brightnessValue() * 100);
+                    break;
+                case kd::Setting::Girth: snprintf(banner, sizeof(banner), "Girth\n%.2f m", settings.girthValue()); break;
+                case kd::Setting::ClearSky:
+                    snprintf(banner, sizeof(banner), "Clear sky\n%.0f%%", settings.clearSkyValue() * 100);
+                    break;
+                case kd::Setting::None:
+                    snprintf(banner, sizeof(banner), "%s", e.kind == kd::ControlEvent::Kind::Relevel ? "Re-leveled" : "");
+                    break;
+            }
+            bannerUntilMs = nowMs + 2000;
+        } else if (e.kind == kd::ControlEvent::Kind::WakeDisplay) {
+            toggleStatusPage = true;
+        } else {
+            wakeDisplay = true;
+        }
+    }
+    // While a button is held, say what letting go will do (kd/controls.h).
+    const kd::Controls::PressInProgress pressNow = controls.pressInProgress(nowMs);
+    const int holdSegments = pressNow.button >= 0 ? pressNow.segments : -1;
+    if (pressNow.button >= 0) {
+        static const char* const kOnRelease[3][3] = {
+            {"Release:\npalette", "Release:\nclear sky", "Release:\nnothing"},
+            {"Release:\nbrightness", "Release:\ngirth", "Release:\nnothing"},
+            {"Release:\nstatus", "Release:\nre-level", ""},
+        };
+        const int col = pressNow.onRelease == kd::ButtonTracker::Press::Quick  ? 0
+                        : pressNow.onRelease == kd::ButtonTracker::Press::Long ? 1
+                                                                               : 2;
+        snprintf(banner, sizeof(banner), "%s", kOnRelease[pressNow.button][col]);
+        bannerUntilMs = nowMs + 300;
+        if (!status_display::bladeView()) wakeDisplay = true;  // the Status page shows the bar
     }
     if (controls.shouldSave(nowMs)) {
         store::saveSettings(settings);
@@ -447,6 +538,7 @@ void loop() {
 
         // Mounting Calibration: guide on the Pixels, apply when finished.
         const kd::MountingCalibration::Step step = calibration.step();
+        const bool calTurned = calibration.turned();
         in.calibration.active = calibration.active();
         in.calibration.step = step == kd::MountingCalibration::Step::LineZeroUp ? 1 : 0;
         in.calibration.progress = calibration.holdProgress();
@@ -456,15 +548,28 @@ void loop() {
         xSemaphoreGive(trackerLock);
 
         if (in.calibration.active || finished) {
-            if (in.calibration.active)
-                snprintf(banner, sizeof(banner), "%s %3d%%", calibration.instruction(),
-                         int(in.calibration.progress * 100.f) / 10 * 10);
+            // Two short rows: the header shows about 11 large letters a row.
+            using CalStep = kd::MountingCalibration::Step;
+            const int pct = int(in.calibration.progress * 100.f) / 10 * 10;
+            if (step == CalStep::TipUp && !calTurned)
+                snprintf(banner, sizeof(banner), "Point the\nblade up");
+            else if (step == CalStep::TipUp)
+                snprintf(banner, sizeof(banner), "Blade up\nhold %d%%", pct);
+            else if (step == CalStep::LineZeroUp && !calTurned)
+                snprintf(banner, sizeof(banner), "Blade level\nline 0 up");
+            else if (step == CalStep::LineZeroUp)
+                snprintf(banner, sizeof(banner), "Blade level\nhold %d%%", pct);
+            else if (step == CalStep::Done)
+                snprintf(banner, sizeof(banner), "Mounting\nsaved");
             else
-                snprintf(banner, sizeof(banner), "%s", calibration.instruction());
+                snprintf(banner, sizeof(banner), "Mounting\nfailed");
             bannerUntilMs = nowMs + 3000;
             if (strcmp(banner, status.banner) != 0) {
                 wakeDisplay = !status_display::bladeView();
-                Serial.printf("# banner: %s\n", banner);
+                char shown[sizeof(banner)];
+                snprintf(shown, sizeof(shown), "%s", banner);
+                if (char* nl = strchr(shown, '\n')) *nl = ' ';
+                Serial.printf("# banner: %s (%s)\n", shown, calibration.instruction());
             }
         }
         if (finished) {
@@ -519,7 +624,17 @@ void loop() {
     status.fps = fps;
     status.imuHz = imuHz;
     status.atRest = atRest;
+    {
+        // Rounded to 5 degrees so the header redraws only when it really moves.
+        const kd::Vec3 blade = in.pose.orientation.rotate({1, 0, 0});
+        status.bladePitch = 5 * int(lroundf(kd::radToDeg(asinf(kd::clampf(blade.z, -1.f, 1.f))) / 5.f));
+        // Side to side only means something while the Blade is not near vertical (within ~80 deg).
+        status.headingKnown = hypotf(blade.x, blade.y) > 0.17f;
+        // Clockwise seen from above is positive (atan2 counts counter-clockwise).
+        status.bladeHeading = 5 * int(lroundf(-kd::radToDeg(atan2f(blade.y, blade.x)) / 5.f));
+    }
     status.recording = recording;
+    status.holdSegments = holdSegments;
     if (static_cast<int32_t>(nowMs - bannerUntilMs) >= 0) banner[0] = '\0';
     memcpy(status.banner, banner, sizeof(status.banner));
     portEXIT_CRITICAL(&statusMux);

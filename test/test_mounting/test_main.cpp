@@ -121,26 +121,35 @@ TEST_CASE("an angled Mounting is measured rather than snapped") {
     CHECK(radToDeg(b.cal.sensorToBody().angleTo(angled)) < 2.f);
 }
 
+TEST_CASE("the first pose waits until the Dong has been turned into it") {
+    Bench b(axisAlignedMount());
+    b.imu.truth = tipUp();  // already lying in the right pose when calibration begins
+    b.hold(5.0);
+    CHECK(b.cal.step() == MountingCalibration::Step::TipUp);
+    CHECK(b.cal.holdProgress() == 0.f);
+    CHECK(std::string(b.cal.instruction()) == "Point the Blade at the ceiling");
+}
+
 TEST_CASE("the second pose waits until the Dong has actually turned") {
     Bench b(axisAlignedMount());
-    b.imu.truth = tipUp();
-    b.hold(2.0);
+    b.imu.truth = lineZeroUp(0, 2.0f);
+    b.turnTo(tipUp(), 1.0);
+    b.hold(kPoseSeconds);
     CHECK(b.cal.step() == MountingCalibration::Step::LineZeroUp);
     b.hold(5.0);  // still in the first pose
     CHECK(b.cal.step() == MountingCalibration::Step::LineZeroUp);
     CHECK(b.cal.holdProgress() == 0.f);
     b.turnTo(lineZeroUp(), 1.0);
-    b.hold(2.0);
-    CHECK(b.cal.holdProgress() > 0.2f);
-    CHECK(b.cal.holdProgress() < 0.8f);
-    b.hold(1.5);
+    CHECK(b.cal.step() == MountingCalibration::Step::LineZeroUp);  // not mid-turn
+    b.hold(kPoseSeconds);
     CHECK(b.cal.step() == MountingCalibration::Step::Done);
 }
 
 TEST_CASE("poses that are not about 90 degrees apart fail with a reason") {
     Bench b(axisAlignedMount());
-    b.imu.truth = tipUp();
-    b.hold(2.0);
+    b.imu.truth = lineZeroUp(0, 2.0f);
+    b.turnTo(tipUp(), 1.0);
+    b.hold(kPoseSeconds);
     b.turnTo(Quat::fromTo({1, 0, 0}, {0, 0, -1}), 1.5);  // tip straight down
     b.hold(kPoseSeconds);
     CHECK(b.cal.step() == MountingCalibration::Step::Failed);
@@ -153,4 +162,17 @@ TEST_CASE("moving never completes a pose") {
     b.imu.omega = [](double t) { return Vec3{0.6f * float(std::sin(3 * t)), 0.4f, 0.f}; };
     for (int i = 0; i < 833 * 5; ++i) b.step();
     CHECK(b.cal.step() == MountingCalibration::Step::TipUp);
+}
+
+TEST_CASE("a pose held in a trembling hand still registers") {
+    Bench b(axisAlignedMount());
+    b.imu.truth = lineZeroUp(0, 2.0f);
+    b.turnTo(tipUp(5.f), 1.0);
+    // Hand tremor: ~8 Hz wobble of a few degrees per second plus small jolts.
+    b.imu.omega = [](double t) {
+        return Vec3{0.12f * float(std::sin(51 * t)), 0.1f * float(std::sin(43 * t + 1)), 0.08f * float(std::sin(37 * t))};
+    };
+    b.imu.linear = [](double t) { return Vec3{0.5f * float(std::sin(47 * t)), 0.4f * float(std::sin(53 * t)), 0.3f * float(std::sin(41 * t))}; };
+    for (double t = 0; t < kPoseSeconds; t += 1.0 / b.imu.rate) b.step();
+    CHECK(b.cal.step() == MountingCalibration::Step::LineZeroUp);
 }

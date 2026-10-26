@@ -24,13 +24,13 @@ struct Hand {
         }
         return last;
     }
-    ControlEvent tap(int b) { return hold(b, 120); }
-    ControlEvent press(int b) { return hold(b, 900); }
+    ControlEvent tap(int b) { return hold(b, 120); }      // Quick
+    ControlEvent press(int b) { return hold(b, 3000); }   // Long
 };
 
 }  // namespace
 
-TEST_CASE("A cycles Palettes, long A steps Clear Sky") {
+TEST_CASE("quick A cycles Palettes, long A steps Clear Sky") {
     Hand h;
     ControlEvent e = h.tap(0);
     CHECK(e.kind == ControlEvent::Kind::Changed);
@@ -43,10 +43,10 @@ TEST_CASE("A cycles Palettes, long A steps Clear Sky") {
     e = h.press(0);
     CHECK(e.changed == Setting::ClearSky);
     CHECK(h.settings.clearSkyValue() != before);
-    CHECK(h.settings.palette == 0);  // a long press is not also a short one
+    CHECK(h.settings.palette == 0);  // a long press is not also a quick one
 }
 
-TEST_CASE("B steps brightness, long B steps Girth through 0 to 0.6 m") {
+TEST_CASE("quick B steps brightness, long B steps Girth through 0 to 0.6 m") {
     Hand h;
     float b0 = h.settings.brightnessValue();
     CHECK(h.tap(1).changed == Setting::Brightness);
@@ -63,7 +63,7 @@ TEST_CASE("B steps brightness, long B steps Girth through 0 to 0.6 m") {
     CHECK(h.settings.girthValue() == 0.f);  // wraps around
 }
 
-TEST_CASE("C wakes the display, long C Re-levels") {
+TEST_CASE("quick C wakes the display, long C Re-levels") {
     Hand h;
     Settings before = h.settings;
     CHECK(h.tap(2).kind == ControlEvent::Kind::WakeDisplay);
@@ -71,13 +71,21 @@ TEST_CASE("C wakes the display, long C Re-levels") {
     CHECK(h.settings == before);
 }
 
-TEST_CASE("a long press fires while still held") {
+TEST_CASE("a long press acts when the button is released") {
     Hand h;
     ControlEvent fired;
-    for (uint32_t t = 0; t < 900 && fired.kind == ControlEvent::Kind::None; t += 5)
-        fired = h.controls.update(false, false, true, h.now += 5);
+    for (uint32_t t = 0; t < 3000; t += 5) {
+        ControlEvent e = h.controls.update(false, false, true, h.now += 5);
+        if (e.kind != ControlEvent::Kind::None) fired = e;
+    }
+    CHECK(fired.kind == ControlEvent::Kind::None);  // still held: nothing yet
+    for (int i = 0; i < 20; ++i) {
+        ControlEvent e = h.controls.update(false, false, false, h.now += 5);
+        if (e.kind != ControlEvent::Kind::None) fired = e;
+    }
     CHECK(fired.kind == ControlEvent::Kind::Relevel);
 }
+
 
 TEST_CASE("contact bounce is ignored") {
     Hand h;
@@ -111,34 +119,54 @@ TEST_CASE("settings loaded from flash are forced into range") {
     CHECK(s.clearSkyValue() <= 0.5f);
 }
 
-TEST_CASE("holding A and C together starts Mounting Calibration, and nothing else") {
+TEST_CASE("holding C for 5 seconds starts Mounting Calibration, and nothing else") {
     Hand h;
     Settings before = h.settings;
-    ControlEvent fired;
-    int calibrations = 0;
-    for (uint32_t t = 0; t < 2500; t += 5) {
-        ControlEvent e = h.controls.update(true, false, true, h.now += 5);
-        if (e.kind != ControlEvent::Kind::None) fired = e;
+    int calibrations = 0, others = 0;
+    for (uint32_t t = 0; t < 7000; t += 5) {
+        ControlEvent e = h.controls.update(false, false, true, h.now += 5);
         calibrations += e.kind == ControlEvent::Kind::CalibrateMounting;
+        others += e.kind != ControlEvent::Kind::None && e.kind != ControlEvent::Kind::CalibrateMounting;
     }
     for (int i = 0; i < 20; ++i) {
         ControlEvent e = h.controls.update(false, false, false, h.now += 5);
-        if (e.kind != ControlEvent::Kind::None) fired = e;
+        others += e.kind != ControlEvent::Kind::None;  // no Re-level on release
     }
-    CHECK(fired.kind == ControlEvent::Kind::CalibrateMounting);
     CHECK(calibrations == 1);
-    CHECK(h.settings == before);  // no Palette, Clear Sky or Re-level on the way
+    CHECK(others == 0);
+    CHECK(h.settings == before);
 }
 
-TEST_CASE("pressing C shortly after A still makes the combo") {
+TEST_CASE("presses are quick before 2 seconds and long from 2 to 5 seconds") {
+    Hand h;
+    CHECK(h.hold(2, 1900).kind == ControlEvent::Kind::WakeDisplay);
+    CHECK(h.hold(2, 2100).kind == ControlEvent::Kind::Relevel);
+    CHECK(h.hold(2, 4900).kind == ControlEvent::Kind::Relevel);
+}
+
+TEST_CASE("a press in progress shows half-second segments and what letting go will do") {
+    Hand h;
+    for (uint32_t t = 0; t < 300; t += 5) h.controls.update(true, false, false, h.now += 5);
+    CHECK(h.controls.pressInProgress(h.now).button == -1);  // too soon to show
+    for (uint32_t t = 0; t < 500; t += 5) h.controls.update(true, false, false, h.now += 5);
+    auto p = h.controls.pressInProgress(h.now);
+    CHECK(p.button == 0);
+    CHECK(p.segments == 1);
+    CHECK(p.onRelease == ButtonTracker::Press::Quick);
+    for (uint32_t t = 0; t < 1500; t += 5) h.controls.update(true, false, false, h.now += 5);
+    p = h.controls.pressInProgress(h.now);
+    CHECK(p.segments == 4);  // ~2.3 s
+    CHECK(p.onRelease == ButtonTracker::Press::Long);
+    for (uint32_t t = 0; t < 3000; t += 5) h.controls.update(true, false, false, h.now += 5);
+    p = h.controls.pressInProgress(h.now);
+    CHECK(p.segments == Controls::kSegments);
+    CHECK(p.onRelease == ButtonTracker::Press::None);  // Held: letting go does nothing
+}
+
+TEST_CASE("holding A or B past 5 seconds does nothing, yet") {
     Hand h;
     Settings before = h.settings;
-    ControlEvent fired;
-    for (uint32_t t = 0; t < 2500; t += 5) {
-        ControlEvent e = h.controls.update(true, false, t >= 300, h.now += 5);
-        if (e.kind != ControlEvent::Kind::None) fired = e;
-    }
-    for (int i = 0; i < 20; ++i) h.controls.update(false, false, false, h.now += 5);
-    CHECK(fired.kind == ControlEvent::Kind::CalibrateMounting);
+    CHECK(h.hold(0, 6000).kind == ControlEvent::Kind::None);
+    CHECK(h.hold(1, 6000).kind == ControlEvent::Kind::None);
     CHECK(h.settings == before);
 }

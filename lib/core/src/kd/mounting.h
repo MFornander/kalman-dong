@@ -17,14 +17,15 @@ namespace kd {
 bool mountingFromAxisMap(const BodyAxisMap& map, Quat& sensorToBody);
 
 // Two held poses: tip straight up, then Line 0 facing the sky. Each must be
-// held still for kHoldSeconds; the second only counts once the Dong has
-// turned away from the first.
+// held still for kHoldSeconds, and each only counts once the Dong has been
+// turned: the first away from where it lay when calibration began, the
+// second away from the first.
 class MountingCalibration {
 public:
     enum class Step : uint8_t { TipUp, LineZeroUp, Done, Failed };
 
     static constexpr float kHoldSeconds = 1.5f;
-    static constexpr float kMinTurnDeg = 45.f;   // pose 2 must differ this much from pose 1
+    static constexpr float kMinTurnDeg = 45.f;   // each pose must differ this much from the one before
     static constexpr float kMaxSkewDeg = 30.f;   // ... and be within this of perpendicular
     static constexpr float kSnapDeg = 20.f;      // snap to an axis-aligned Mounting within this
 
@@ -35,6 +36,10 @@ public:
 
     Step step() const { return step_; }
     bool active() const { return step_ == Step::TipUp || step_ == Step::LineZeroUp; }
+
+    // Whether the Dong has been turned into the current pose yet (the hold
+    // only counts after that).
+    bool turned() const { return turned_; }
 
     // 0..1 progress through holding the current pose.
     float holdProgress() const;
@@ -52,9 +57,13 @@ private:
     void finish(const Vec3& up1, const Vec3& up2);
 
     Step step_ = Step::Done;
-    Stillness stillness_;
-    Vec3 tipUp_;          // sensor-frame "up" in pose 1 (body +X)
-    bool turned_ = false;  // pose 2 only: has the Dong left pose 1 yet?
+    // Held in a hand, not resting on a desk: tremor is fine, only the
+    // average direction of gravity matters.
+    Stillness stillness_{Stillness::Limits{0.25f, 1.0f}};
+    Vec3 previousUp_;      // sensor-frame "up" the current pose must turn away from
+    Vec3 tipUp_;           // sensor-frame "up" in pose 1 (body +X)
+    bool havePrevious_ = false;
+    bool turned_ = false;  // has the Dong left the previous pose yet?
     const char* failure_ = "";
     Quat result_;
 };

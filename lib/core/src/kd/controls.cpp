@@ -38,14 +38,14 @@ ButtonTracker::Press ButtonTracker::update(bool down, uint32_t nowMs) {
         stable_ = raw_;
         if (stable_) {
             pressedAtMs_ = nowMs;
-            longFired_ = false;
-        } else if (!longFired_) {
-            out = Press::Short;
+            held_ = false;
+        } else {
+            if (!held_) out = nowMs - pressedAtMs_ >= kLongMs ? Press::Long : Press::Quick;
         }
     }
-    if (stable_ && !longFired_ && nowMs - pressedAtMs_ >= kLongMs) {
-        longFired_ = true;
-        out = Press::Long;
+    if (stable_ && !held_ && nowMs - pressedAtMs_ >= kHeldMs) {
+        held_ = true;
+        out = Press::Held;
     }
     return out;
 }
@@ -54,26 +54,6 @@ ControlEvent Controls::update(bool aDown, bool bDown, bool cDown, uint32_t nowMs
     const bool down[3] = {aDown, bDown, cDown};
     ButtonTracker::Press presses[3];
     for (int i = 0; i < 3; ++i) presses[i] = buttons_[i].update(down[i], nowMs);
-
-    // A + C together is its own gesture: swallow both buttons' presses.
-    ButtonTracker& a = buttons_[static_cast<int>(Button::A)];
-    ButtonTracker& c = buttons_[static_cast<int>(Button::C)];
-    if (a.isDown() && c.isDown()) {
-        if (!comboHeld_) {
-            comboHeld_ = true;
-            comboFired_ = false;
-            comboSinceMs_ = nowMs;
-        }
-        a.cancel();
-        c.cancel();
-        presses[static_cast<int>(Button::A)] = presses[static_cast<int>(Button::C)] = ButtonTracker::Press::None;
-        if (!comboFired_ && nowMs - comboSinceMs_ >= kComboMs) {
-            comboFired_ = true;
-            return {ControlEvent::Kind::CalibrateMounting, Setting::None};
-        }
-    } else if (!a.isDown() && !c.isDown()) {
-        comboHeld_ = false;
-    }
 
     ControlEvent result;
     for (int i = 0; i < 3; ++i) {
@@ -84,7 +64,26 @@ ControlEvent Controls::update(bool aDown, bool bDown, bool cDown, uint32_t nowMs
     return result;
 }
 
+Controls::PressInProgress Controls::pressInProgress(uint32_t nowMs) const {
+    PressInProgress p;
+    for (int i = 0; i < 3; ++i) {
+        const uint32_t held = buttons_[i].heldMs(nowMs);
+        if (held < kSegmentMs) continue;
+        p.button = i;
+        p.segments = held >= ButtonTracker::kHeldMs ? kSegments : static_cast<int>(held / kSegmentMs);
+        p.onRelease = held >= ButtonTracker::kHeldMs ? ButtonTracker::Press::None
+                      : held >= ButtonTracker::kLongMs ? ButtonTracker::Press::Long
+                                                       : ButtonTracker::Press::Quick;
+        break;
+    }
+    return p;
+}
+
 ControlEvent Controls::apply(Button b, ButtonTracker::Press p, uint32_t nowMs) {
+    if (p == ButtonTracker::Press::Held) {
+        if (b == Button::C) return {ControlEvent::Kind::CalibrateMounting, Setting::None};
+        return {};  // A and B have no Held action yet
+    }
     const bool isLong = p == ButtonTracker::Press::Long;
     ControlEvent e{ControlEvent::Kind::Changed, Setting::None};
     switch (b) {
