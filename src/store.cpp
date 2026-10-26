@@ -6,7 +6,7 @@ namespace store {
 
 namespace {
 Preferences prefs;
-constexpr uint8_t kVersion = 1;
+constexpr uint8_t kVersion = 2;  // 2: Girth steps shrank; older saved settings reset to defaults
 }  // namespace
 
 void begin() { prefs.begin("kalman-dong", false); }
@@ -18,6 +18,8 @@ kd::Settings loadSettings() {
         s.brightness = prefs.getUChar("bright", s.brightness);
         s.girth = prefs.getUChar("girth", s.girth);
         s.clearSky = prefs.getUChar("clearsky", s.clearSky);
+        s.motion = prefs.getUChar("motion", s.motion);
+        s.cloudSize = prefs.getUChar("cloudsize", s.cloudSize);
     }
     s.sanitize();
     return s;
@@ -29,6 +31,8 @@ void saveSettings(const kd::Settings& s) {
     prefs.putUChar("bright", s.brightness);
     prefs.putUChar("girth", s.girth);
     prefs.putUChar("clearsky", s.clearSky);
+    prefs.putUChar("motion", s.motion);
+    prefs.putUChar("cloudsize", s.cloudSize);
 }
 
 kd::Vec3 loadGyroBias() {

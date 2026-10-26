@@ -44,6 +44,7 @@ public:
     const CloudSettings& settings() const { return settings_; }
     void setSettings(const CloudSettings& s) { settings_ = s; }
     void setClearSky(float share) { settings_.clearSky = clampf(share, 0.f, 0.9f); }
+    void setCloudSize(float metres) { settings_.cloudSize = clampf(metres, 0.05f, 20.f); }
 
     Instant at(double showTime) const;
 

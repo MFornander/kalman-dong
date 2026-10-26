@@ -5,8 +5,8 @@
 // afterwards does nothing).
 //
 //        Quick              Long              Held
-//   A    next Palette       step Clear Sky    -
-//   B    step brightness    step Girth        -
+//   A    next Palette       cloud size        step Clear Sky
+//   B    cloud motion       step brightness   step Girth
 //   C    Status page        Re-level          Mounting Calibration
 #pragma once
 
@@ -19,10 +19,14 @@ namespace kd {
 struct Settings {
     uint8_t palette = 0;
     uint8_t brightness = 2;
-    uint8_t girth = 2;
+    uint8_t girth = 1;  // 0.1 m: neighbouring Lines similar, twisting still rolls color
     uint8_t clearSky = 1;
+    uint8_t motion = 0;     // cloud motion: frozen, then 1x and 2x speed
+    uint8_t cloudSize = 1;  // 0.6 m
 
     float brightnessValue() const;  // 0..1
+    float motionValue() const;      // how fast the Cloud Field moves: 0 frozen, 1 normal
+    float cloudSizeValue() const;   // m; typical size of one cloud
     float girthValue() const;       // m
     float clearSkyValue() const;    // 0..1 share of the Cloud Field
 
@@ -30,7 +34,8 @@ struct Settings {
     void sanitize();
 
     bool operator==(const Settings& o) const {
-        return palette == o.palette && brightness == o.brightness && girth == o.girth && clearSky == o.clearSky;
+        return palette == o.palette && brightness == o.brightness && girth == o.girth && clearSky == o.clearSky &&
+               motion == o.motion && cloudSize == o.cloudSize;
     }
 };
 
@@ -38,6 +43,8 @@ enum class Button : uint8_t { A, B, C };
 
 // Debounces one button and reports its presses: Quick or Long on release,
 // Held the moment the press reaches kHeldMs (and then nothing on release).
+// Presses are timed from the samples where the level first changed, so they
+// can be fed late (queued in a ButtonLog) and still come out right.
 class ButtonTracker {
 public:
     enum class Press : uint8_t { None, Quick, Long, Held };
@@ -61,12 +68,21 @@ private:
     bool held_ = false;
 };
 
-enum class Setting : uint8_t { None, Palette, ClearSky, Brightness, Girth };
+enum class Setting : uint8_t { None, Palette, ClearSky, Brightness, Girth, Motion, CloudSize };
 
 struct ControlEvent {
     enum class Kind : uint8_t { None, Changed, WakeDisplay, Relevel, CalibrateMounting };
     Kind kind = Kind::None;
     Setting changed = Setting::None;
+};
+
+// What one update did: at most one event per button.
+struct ControlEvents {
+    ControlEvent events[3];
+    int count = 0;
+
+    const ControlEvent* begin() const { return events; }
+    const ControlEvent* end() const { return events + count; }
 };
 
 class Controls {
@@ -79,8 +95,8 @@ public:
 
     explicit Controls(Settings& settings) : settings_(settings) {}
 
-    // Feed the raw (debounced here) button levels; returns at most one event.
-    ControlEvent update(bool aDown, bool bDown, bool cDown, uint32_t nowMs);
+    // Feed the raw (debounced here) button levels.
+    ControlEvents update(bool aDown, bool bDown, bool cDown, uint32_t nowMs);
 
     // True once settings changed and no button has changed them for a while.
     bool shouldSave(uint32_t nowMs) const { return dirty_ && nowMs - lastChangeMs_ >= kSaveQuietMs; }
@@ -101,6 +117,8 @@ private:
     ButtonTracker buttons_[3];
     bool dirty_ = false;
     uint32_t lastChangeMs_ = 0;
+    bool started_ = false;
+    uint32_t lastMs_ = 0;  // latest time fed to update()
 };
 
 }  // namespace kd

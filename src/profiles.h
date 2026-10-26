@@ -25,7 +25,7 @@
 // view: the Blade runs toward the right edge of the screen held in landscape.
 #define LED_STRAND0_DATA 38
 #define LED_STRAND0_CLOCK 39
-#define LED_DATA_MHZ 12
+#define LED_DATA_MHZ 4  // no level shifter on the first prototype (docs/led-build.md)
 #define BATTERY_PIN -1
 
 inline const kd::DongProfile& dongProfile() {

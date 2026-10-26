@@ -18,10 +18,16 @@ defined in [CONTEXT.md](CONTEXT.md); key decisions are in [docs/adr/](docs/adr/)
 - Seeed **XIAO ESP32-S3 Plus with the 1.14" display** carrier: onboard
   LSM6DS3-family IMU (I2C, INT1 on GPIO41), ST7789 display, buttons A/B/C.
 - **SK9822/APA102** 4-pin Pixels in 4 Lines along a 1-2 m Blade. Data and
-  clock go on the free pads GPIO38/39 (a second Strand uses GPIO40/42),
-  through a 74AHCT125 level shifter for 5 V Pixels.
-- One battery pack feeds the Pixels and the board's 5 V input (via a diode).
-  Pack voltage can be sensed through a divider on a free pad.
+  clock go on the pads D11/D12 (GPIO38/39; a second Strand uses D13/D15).
+  The 1 m prototype drives them directly at 4 MHz; longer builds add a
+  74AHCT125 level shifter.
+- The prototype runs from a two-port USB power bank: one port to the board's
+  USB-C, one to the Pixels' 5 V at the Hilt. Three external buttons wire to
+  the U1-U3 pads.
+
+Wiring, power, buttons and first light:
+[docs/led-build.md](docs/led-build.md), with the
+[exact pads on the carrier](docs/led-build.md#where-each-wire-goes-on-the-carrier).
 
 Each physical build is a **Dong Profile** in [src/profiles.h](src/profiles.h):
 Blade length, Pixels per Line, how Strands fold into Lines, pins, IMU axis
@@ -44,8 +50,8 @@ Quick, amber for Long) and what letting go will do.
 
 | Button | Quick            | Long            | Held                 | Bare board | Other builds |
 |--------|------------------|-----------------|----------------------|------------|--------------|
-| A      | next Palette     | step Clear Sky  | -                    | USR3       | USR1         |
-| B      | step brightness  | step Girth      | -                    | USR2       | USR2         |
+| A      | next Palette     | cloud size: 0.3, 0.6, 1.2, 2.4 m | step Clear Sky | USR3 | USR1 |
+| B      | cloud motion: frozen, 1x, 2x | step brightness | step Girth | USR2 | USR2 |
 | C      | Status page (again to close; closes itself after 30 s) | Re-level | Mounting Calibration | USR1 | USR3 |
 
 Each Dong Profile picks its button pins (`BUTTON_*_PIN` in
@@ -149,24 +155,27 @@ pio device monitor -e xiao_screen
 Serial commands: `i` status plus per-stage frame, IMU and display timings, `c`
 start Mounting Calibration, `f` switch orientation filter (Mahony / Kalman),
 `a` toggle axis check (5 Hz), `b` Cloud Field micro-benchmark, `v` toggle the
-Blade view, `R`/`S` start/stop raw IMU streaming.
+Blade view, `R`/`S` start/stop raw IMU streaming, `z` log a line every frame
+for 3 s (then `i` shows the worst loop, which should stay a few ms even with
+the port closed).
 
 1. **Boot and IMU.** The Blade view comes up right away (C shows the Status page). `i`
    should name the chip (LSM6DS3 / LSM6DS3TR-C / LSM6DSO) and report about
    833 Hz IMU and up to 240 fps.
-2. **Mounting.** Run Mounting Calibration (hold C for 5 s, see above). Then press `a`:
-   `Blade pitch` should read about +90 with the Blade at the ceiling and about
-   0 with it level.
+2. **Mounting.** Run Mounting Calibration (hold C for 5 s, see above). The
+   header's TIP should then read about +90 with the Blade at the ceiling and
+   about 0 with it level.
 3. **Ignition.** Reset with the board still: the bars extend from the left
    in about a second. Reset while shaking it: still done within two seconds.
-4. **Slicing.** Sweep the board slowly left and right and tilt it up and
-   down: the colors should change as if you are moving through fixed clouds,
-   and come back when you return to the same pointing direction.
-5. **Girth.** Long-press B to 0: all four bars match. Step it up and roll the
-   board about its long axis: colors roll between the bars.
-6. **Buttons.** A cycles Palettes, long A steps Clear Sky, B brightness, C
-   shows the Status page, long C Re-levels (the clouds jump to the "home"
-   view for wherever you point).
+4. **Slicing.** With the clouds frozen (the default; B quick cycles frozen,
+   1x, 2x), sweep the board left and right and tilt it up and down: the
+   colors change as you move through the clouds and return exactly when you
+   come back to the same pointing direction.
+5. **Girth.** Hold B for 5 s to step Girth; at 0 all four bars match. At
+   0.4 m, roll the board 90 deg about the Blade: the colors move one bar over
+   (what was on TOP shows on L after a clockwise roll seen from the Hilt).
+6. **Buttons.** See the table above; while a button is down the header shows
+   what letting go will do.
 7. **Settings survive power cycles.** Change something, wait 3 s, unplug,
    plug back in.
 8. **Rest.** Lay the board down: after 60 s the bars dim to 20%; pick it up
@@ -225,5 +234,5 @@ mid-motion), while Mahony holds heading better at rest (0.07 vs 1.0 deg over
 IMU cost per sample on the board (budget 1224 us at 817 Hz): I2C read ~550
 us, tracking ~100 us with Mahony and ~200 us with Kalman.
 
-Still to check, on a real strip: LED colors, signal quality at
-8-12 MHz through the level shifter, and current draw.
+Still to check, on a real strip: LED colors, signal quality at 4 MHz
+without a level shifter (the 1 m prototype), and current draw.

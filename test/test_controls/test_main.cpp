@@ -15,13 +15,10 @@ struct Hand {
     ControlEvent hold(int button, uint32_t ms) {
         ControlEvent last;
         for (uint32_t t = 0; t < ms; t += 5) {
-            ControlEvent e = controls.update(button == 0, button == 1, button == 2, now += 5);
-            if (e.kind != ControlEvent::Kind::None) last = e;
+            for (const ControlEvent& e : controls.update(button == 0, button == 1, button == 2, now += 5)) last = e;
         }
-        for (int i = 0; i < 20; ++i) {
-            ControlEvent e = controls.update(false, false, false, now += 5);
-            if (e.kind != ControlEvent::Kind::None) last = e;
-        }
+        for (int i = 0; i < 20; ++i)
+            for (const ControlEvent& e : controls.update(false, false, false, now += 5)) last = e;
         return last;
     }
     ControlEvent tap(int b) { return hold(b, 120); }      // Quick
@@ -30,7 +27,7 @@ struct Hand {
 
 }  // namespace
 
-TEST_CASE("quick A cycles Palettes, long A steps Clear Sky") {
+TEST_CASE("quick A cycles Palettes, long A steps cloud size, held A steps Clear Sky") {
     Hand h;
     ControlEvent e = h.tap(0);
     CHECK(e.kind == ControlEvent::Kind::Changed);
@@ -39,27 +36,39 @@ TEST_CASE("quick A cycles Palettes, long A steps Clear Sky") {
     for (size_t i = 1; i < paletteCount(); ++i) h.tap(0);
     CHECK(h.settings.palette == 0);
 
-    float before = h.settings.clearSkyValue();
+    CHECK(h.settings.cloudSizeValue() == doctest::Approx(0.6f));
     e = h.press(0);
-    CHECK(e.changed == Setting::ClearSky);
-    CHECK(h.settings.clearSkyValue() != before);
+    CHECK(e.changed == Setting::CloudSize);
+    CHECK(h.settings.cloudSizeValue() == doctest::Approx(1.2f));
     CHECK(h.settings.palette == 0);  // a long press is not also a quick one
+
+    float before = h.settings.clearSkyValue();
+    CHECK(h.hold(0, 5500).changed == Setting::ClearSky);
+    CHECK(h.settings.clearSkyValue() != before);
 }
 
-TEST_CASE("quick B steps brightness, long B steps Girth through 0 to 0.6 m") {
+TEST_CASE("quick B cycles cloud motion, long B steps brightness, held B steps Girth") {
     Hand h;
+    CHECK(h.settings.motionValue() == 0.f);  // clouds start frozen
+    CHECK(h.tap(1).changed == Setting::Motion);
+    CHECK(h.settings.motionValue() == 1.f);
+    h.tap(1);
+    CHECK(h.settings.motionValue() == 2.f);
+    h.tap(1);
+    CHECK(h.settings.motionValue() == 0.f);
+
     float b0 = h.settings.brightnessValue();
-    CHECK(h.tap(1).changed == Setting::Brightness);
+    CHECK(h.press(1).changed == Setting::Brightness);
     CHECK(h.settings.brightnessValue() != b0);
 
     h.settings.girth = 0;
     float seen[4];
     for (float& g : seen) {
         g = h.settings.girthValue();
-        CHECK(h.press(1).changed == Setting::Girth);
+        CHECK(h.hold(1, 5500).changed == Setting::Girth);
     }
     CHECK(seen[0] == 0.f);
-    CHECK(seen[3] == doctest::Approx(0.6f));
+    CHECK(seen[3] == doctest::Approx(0.4f));
     CHECK(h.settings.girthValue() == 0.f);  // wraps around
 }
 
@@ -74,15 +83,11 @@ TEST_CASE("quick C wakes the display, long C Re-levels") {
 TEST_CASE("a long press acts when the button is released") {
     Hand h;
     ControlEvent fired;
-    for (uint32_t t = 0; t < 3000; t += 5) {
-        ControlEvent e = h.controls.update(false, false, true, h.now += 5);
-        if (e.kind != ControlEvent::Kind::None) fired = e;
-    }
+    for (uint32_t t = 0; t < 3000; t += 5)
+        for (const ControlEvent& e : h.controls.update(false, false, true, h.now += 5)) fired = e;
     CHECK(fired.kind == ControlEvent::Kind::None);  // still held: nothing yet
-    for (int i = 0; i < 20; ++i) {
-        ControlEvent e = h.controls.update(false, false, false, h.now += 5);
-        if (e.kind != ControlEvent::Kind::None) fired = e;
-    }
+    for (int i = 0; i < 20; ++i)
+        for (const ControlEvent& e : h.controls.update(false, false, false, h.now += 5)) fired = e;
     CHECK(fired.kind == ControlEvent::Kind::Relevel);
 }
 
@@ -123,15 +128,12 @@ TEST_CASE("holding C for 5 seconds starts Mounting Calibration, and nothing else
     Hand h;
     Settings before = h.settings;
     int calibrations = 0, others = 0;
-    for (uint32_t t = 0; t < 7000; t += 5) {
-        ControlEvent e = h.controls.update(false, false, true, h.now += 5);
-        calibrations += e.kind == ControlEvent::Kind::CalibrateMounting;
-        others += e.kind != ControlEvent::Kind::None && e.kind != ControlEvent::Kind::CalibrateMounting;
-    }
-    for (int i = 0; i < 20; ++i) {
-        ControlEvent e = h.controls.update(false, false, false, h.now += 5);
-        others += e.kind != ControlEvent::Kind::None;  // no Re-level on release
-    }
+    for (uint32_t t = 0; t < 7000; t += 5)
+        for (const ControlEvent& e : h.controls.update(false, false, true, h.now += 5)) {
+            calibrations += e.kind == ControlEvent::Kind::CalibrateMounting;
+            others += e.kind != ControlEvent::Kind::CalibrateMounting;
+        }
+    for (int i = 0; i < 20; ++i) others += h.controls.update(false, false, false, h.now += 5).count;  // no Re-level on release
     CHECK(calibrations == 1);
     CHECK(others == 0);
     CHECK(h.settings == before);
@@ -163,10 +165,3 @@ TEST_CASE("a press in progress shows half-second segments and what letting go wi
     CHECK(p.onRelease == ButtonTracker::Press::None);  // Held: letting go does nothing
 }
 
-TEST_CASE("holding A or B past 5 seconds does nothing, yet") {
-    Hand h;
-    Settings before = h.settings;
-    CHECK(h.hold(0, 6000).kind == ControlEvent::Kind::None);
-    CHECK(h.hold(1, 6000).kind == ControlEvent::Kind::None);
-    CHECK(h.settings == before);
-}

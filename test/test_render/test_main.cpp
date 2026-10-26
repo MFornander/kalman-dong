@@ -1,5 +1,6 @@
 #include "../doctest_main.h"
 
+#include <cstdlib>
 #include <vector>
 
 #include "kd/power_governor.h"
@@ -93,7 +94,7 @@ TEST_CASE("with zero Girth every Line shows the same Slice; with Girth they diff
     f.renderer.render(steady(), s, f.px.data());
     for (size_t i = 0; i < 60; ++i) CHECK(f.at(0, i) == f.at(2, i));
 
-    s.girth = 3;  // 0.6 m
+    s.girth = 3;  // 0.4 m
     f.renderer.render(steady(), s, f.px.data());
     int differ = 0;
     for (size_t i = 0; i < 60; ++i) differ += f.at(0, i) != f.at(2, i);
@@ -208,4 +209,22 @@ TEST_CASE("Mounting Calibration shows which way to hold the Dong, and the hold f
     f.renderer.render(in, s, f.px.data());
     CHECK(f.at(0, 5).g > f.at(0, 5).r);
     CHECK(f.at(0, 55).r == f.at(0, 55).g);
+}
+
+TEST_CASE("larger clouds spread each color over more of the Blade") {
+    Frame small(profile()), large(profile());
+    Settings s;
+    s.cloudSize = 0;  // 0.3 m
+    small.renderer.render(steady(), s, small.px.data());
+    s.cloudSize = 3;  // 2.4 m
+    large.renderer.render(steady(), s, large.px.data());
+    auto roughness = [](const Frame& f) {
+        long sum = 0;
+        for (size_t i = 1; i < 60; ++i) {
+            const Rgb8 &a = f.at(0, i), &b = f.at(0, i - 1);
+            sum += std::abs(a.r - b.r) + std::abs(a.g - b.g) + std::abs(a.b - b.b);
+        }
+        return sum;
+    };
+    CHECK(roughness(large) * 3 < roughness(small));
 }
