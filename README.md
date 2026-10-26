@@ -46,7 +46,7 @@ Quick, amber for Long) and what letting go will do.
 |--------|------------------|-----------------|----------------------|------------|--------------|
 | A      | next Palette     | step Clear Sky  | -                    | USR3       | USR1         |
 | B      | step brightness  | step Girth      | -                    | USR2       | USR2         |
-| C      | wake the display | Re-level        | Mounting Calibration | USR1       | USR3         |
+| C      | Status page (again to close; closes itself after 30 s) | Re-level | Mounting Calibration | USR1 | USR3 |
 
 Each Dong Profile picks its button pins (`BUTTON_*_PIN` in
 [src/profiles.h](src/profiles.h)).

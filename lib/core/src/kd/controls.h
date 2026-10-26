@@ -7,7 +7,7 @@
 //        Quick              Long              Held
 //   A    next Palette       step Clear Sky    -
 //   B    step brightness    step Girth        -
-//   C    wake the display   Re-level          Mounting Calibration
+//   C    Status page        Re-level          Mounting Calibration
 #pragma once
 
 #include <cstdint>

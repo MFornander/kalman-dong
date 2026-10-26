@@ -252,6 +252,14 @@ void wake(const Status& status, uint32_t nowMs) {
     drawStatus(status);
 }
 
+void toggle(const Status& status, uint32_t nowMs) {
+    if (!ready) return;
+    if (page == Page::Status && static_cast<int32_t>(statusUntilMs - nowMs) > 0)
+        statusUntilMs = nowMs;  // the next update() closes it
+    else
+        wake(status, nowMs);
+}
+
 void update(const Status& status, const kd::Rgb8* lines, size_t lineCount, size_t pixelsPerLine, uint32_t nowMs) {
     if (!ready) return;
     bool statusDue = static_cast<int32_t>(statusUntilMs - nowMs) > 0;

@@ -30,7 +30,7 @@ struct Status {
 
 namespace status_display {
 
-constexpr uint32_t kAwakeMs = 5000;
+constexpr uint32_t kAwakeMs = 30000;
 
 bool begin();
 
@@ -48,6 +48,9 @@ void drawTimes(uint32_t& textUs, uint32_t& barsUs);
 
 // Shows the Status page for kAwakeMs.
 void wake(const Status& status, uint32_t nowMs);
+
+// Opens the Status page for kAwakeMs, or closes it if it is open.
+void toggle(const Status& status, uint32_t nowMs);
 
 // Call regularly from the display task. `lines` holds lineCount *
 // pixelsPerLine Pixels, Line after Line, each from the Hilt outward.

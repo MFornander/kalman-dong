@@ -91,6 +91,7 @@ portMUX_TYPE statusMux = portMUX_INITIALIZER_UNLOCKED;
 Status status;
 std::vector<kd::Rgb8> shownLines;
 volatile bool wakeDisplay = true;
+volatile bool toggleStatusPage = false;  // C quick: open the Status page, or close it
 
 // Per-stage frame timing (us, smoothed), printed by 'i'.
 struct FrameTiming {
@@ -170,7 +171,10 @@ void displayTask(void*) {
         memcpy(linesCopy.data(), shownLines.data(), linesCopy.size() * sizeof(kd::Rgb8));
         portEXIT_CRITICAL(&statusMux);
         uint32_t now = millis();
-        if (wakeDisplay) {
+        if (toggleStatusPage) {
+            toggleStatusPage = false;
+            status_display::toggle(snapshot, now);
+        } else if (wakeDisplay) {
             wakeDisplay = false;
             status_display::wake(snapshot, now);
         } else {
@@ -261,8 +265,8 @@ void handleSerial() {
             case 'c':
                 startCalibration();
                 break;
-            case 'w':  // as if C were pressed: show the Status page
-                wakeDisplay = true;
+            case 'w':  // as if C were pressed: open or close the Status page
+                toggleStatusPage = true;
                 break;
             case 'p':  // raw button levels (0 = pressed), and how GPIO43 is wired inside the chip
                 Serial.printf("# buttons A(gpio%d)=%d B(gpio%d)=%d C(gpio%d)=%d\n", kButtonA,
@@ -485,6 +489,8 @@ void loop() {
                     break;
             }
             bannerUntilMs = nowMs + 2000;
+        } else if (e.kind == kd::ControlEvent::Kind::WakeDisplay) {
+            toggleStatusPage = true;
         } else {
             wakeDisplay = true;
         }
