@@ -43,7 +43,8 @@ struct Rig {
 
 }  // namespace
 
-// Every motion test runs against both orientation filters.
+// Every motion test runs against every orientation filter in the FilterBank
+// (kd/filter_bank.h); a new filter is listed here too.
 #define FILTERS MahonyFilter, KalmanFilter
 
 TEST_CASE_TEMPLATE("Ignition while held still learns gravity and gyro bias in about a second", F, FILTERS) {

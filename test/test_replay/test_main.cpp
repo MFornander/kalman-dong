@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "kd/filter_bank.h"
 #include "kd/motion_tracker.h"
 
 using namespace kd;
@@ -134,9 +135,9 @@ TEST_CASE("every recording in test/data replays cleanly") {
         auto rows = parseRecording(f);
         CAPTURE(entry.path().filename().string());
         REQUIRE(rows.size() > 833);
-        MahonyFilter mahony;
-        KalmanFilter kalman;
-        for (OrientationFilter* filter : {static_cast<OrientationFilter*>(&mahony), static_cast<OrientationFilter*>(&kalman)}) {
+        FilterBank bank;
+        for (size_t i = 0; i < bank.count(); ++i) {
+            OrientationFilter* filter = &bank.at(i);
             ReplayResult r = replay(rows, *filter);
             CAPTURE(std::string(filter->name()));
             CHECK(r.finite);

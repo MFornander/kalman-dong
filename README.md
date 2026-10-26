@@ -194,7 +194,10 @@ Hardware lessons so far:
   smoothed readings (see `test/data/bench-desk-20s.csv`).
 
 Two orientation filters sit behind one interface: Mahony (default) and an
-error-state Kalman filter with innovation gating; `f` switches live. In
+error-state Kalman filter with innovation gating; `f` cycles them live, and
+`-DKD_FILTER=Kalman` in a build's `build_flags` makes another the default.
+[kd/filter_bank.h](lib/core/src/kd/filter_bank.h) lists them and says how to
+add one. In
 simulation the Kalman filter holds tilt 13x better when the gyro bias shifts
 mid-swing and somewhat better through big swings, and is slightly worse
 under hand jitter (`pio test -e native -f test_motion -v` prints the

@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "kd/controls.h"
+#include "kd/filter_bank.h"
 #include "imu_lsm6.h"
 #include "kd/motion_tracker.h"
 #include "kd/mounting.h"
@@ -43,9 +44,17 @@ constexpr uint32_t kBatteryPeriodMs = 500;
 const kd::DongProfile& profile = dongProfile();
 
 // Motion: written by the IMU task, read by the render loop, under trackerLock.
-kd::MahonyFilter mahony;
-kd::KalmanFilter kalman;
-kd::MotionTracker tracker(mahony);
+// Orientation filters (kd/filter_bank.h). Mahony unless the build names one,
+// e.g. build_flags = -DKD_FILTER=Kalman; serial 'f' cycles them live.
+#define KD_STRINGIFY2(x) #x
+#define KD_STRINGIFY(x) KD_STRINGIFY2(x)
+#ifdef KD_FILTER
+constexpr const char* kBuildFilter = KD_STRINGIFY(KD_FILTER);
+#else
+constexpr const char* kBuildFilter = kd::kDefaultFilter;
+#endif
+kd::FilterBank filters;
+kd::MotionTracker tracker(filters.byName(kBuildFilter));
 SemaphoreHandle_t trackerLock;
 SemaphoreHandle_t imuSignal;
 ImuLsm6 imu;
@@ -220,10 +229,9 @@ void handleSerial() {
             case 'a':
                 printAxes = !printAxes;
                 break;
-            case 'f': {  // A/B the orientation filters
+            case 'f': {  // next orientation filter
                 xSemaphoreTake(trackerLock, portMAX_DELAY);
-                bool toKalman = &tracker.filter() == &mahony;
-                tracker.setFilter(toKalman ? static_cast<kd::OrientationFilter&>(kalman) : mahony);
+                tracker.setFilter(filters.next(tracker.filter()));
                 xSemaphoreGive(trackerLock);
                 Serial.printf("# filter %s\n", tracker.filter().name());
                 break;
