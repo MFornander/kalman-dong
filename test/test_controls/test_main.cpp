@@ -46,7 +46,7 @@ TEST_CASE("quick A cycles Palettes, long A steps Clear Sky") {
     CHECK(h.settings.palette == 0);  // a long press is not also a quick one
 }
 
-TEST_CASE("quick B steps brightness, long B steps Girth through 0 to 0.6 m") {
+TEST_CASE("quick B steps brightness, long B steps Girth through 0 to 0.4 m") {
     Hand h;
     float b0 = h.settings.brightnessValue();
     CHECK(h.tap(1).changed == Setting::Brightness);
@@ -59,7 +59,7 @@ TEST_CASE("quick B steps brightness, long B steps Girth through 0 to 0.6 m") {
         CHECK(h.press(1).changed == Setting::Girth);
     }
     CHECK(seen[0] == 0.f);
-    CHECK(seen[3] == doctest::Approx(0.6f));
+    CHECK(seen[3] == doctest::Approx(0.4f));
     CHECK(h.settings.girthValue() == 0.f);  // wraps around
 }
 

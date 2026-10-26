@@ -93,7 +93,7 @@ TEST_CASE("with zero Girth every Line shows the same Slice; with Girth they diff
     f.renderer.render(steady(), s, f.px.data());
     for (size_t i = 0; i < 60; ++i) CHECK(f.at(0, i) == f.at(2, i));
 
-    s.girth = 3;  // 0.6 m
+    s.girth = 3;  // 0.4 m
     f.renderer.render(steady(), s, f.px.data());
     int differ = 0;
     for (size_t i = 0; i < 60; ++i) differ += f.at(0, i) != f.at(2, i);

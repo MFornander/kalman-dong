@@ -6,7 +6,7 @@ namespace store {
 
 namespace {
 Preferences prefs;
-constexpr uint8_t kVersion = 1;
+constexpr uint8_t kVersion = 2;  // 2: Girth steps shrank; older saved settings reset to defaults
 }  // namespace
 
 void begin() { prefs.begin("kalman-dong", false); }

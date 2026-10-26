@@ -32,7 +32,8 @@ constexpr int kStatusWidth = 135;
 // tip, then a header band at the tip end, drawn upright: in upright
 // coordinates it is the top kHeaderBand rows, 135 wide.
 constexpr int kHeaderBand = 56;
-constexpr int kBarLength = 240 - kHeaderBand;
+constexpr int kLabelBand = 14;  // at the tip end, under the header: which side each bar's Line faces
+constexpr int kBarLength = 240 - kHeaderBand - kLabelBand;
 constexpr int kBarsTop = 2;
 constexpr int kRowHeight = 28;
 constexpr int kRowGap = 6;
@@ -50,6 +51,7 @@ uint8_t gammaLut[256];
 uint32_t textUs = 0, barsUs = 0, statusUs = 0;
 char shownHeader[84] = "";
 int shownSegments = -1;  // hold-C bar segments on show; -1 none
+bool labelsShown = false;
 // What each Status line shows now. This library draws text a pixel at a
 // time (the whole page takes about a second), so a line is redrawn only when
 // its text or highlight changes.
@@ -65,6 +67,7 @@ void showPage(Page next) {
     for (bool& h : shownHighlight) h = false;
     shownFooter[0] = '\0';
     shownSegments = -1;
+    labelsShown = false;
     if (next == Page::Off) {
         display.panel().setBacklight(0);
         display.panel().sleep();
@@ -181,11 +184,12 @@ void drawBlade(const Status& s, const kd::Rgb8* lines, size_t lineCount, size_t 
             snprintf(row1, sizeof(row1), "%s", s.banner);
         }
     } else {
-        snprintf(row1, sizeof(row1), "Tip %+d", s.bladePitch);
+        // Labels padded to one width so the numbers start in the same column.
+        snprintf(row1, sizeof(row1), "%-4s %+d", "Tip", s.bladePitch);
         if (s.headingKnown)
-            snprintf(row2, sizeof(row2), "Side %+d", s.bladeHeading);
+            snprintf(row2, sizeof(row2), "%-4s %+d", "Side", s.bladeHeading);
         else
-            snprintf(row2, sizeof(row2), "Side --");
+            snprintf(row2, sizeof(row2), "%-4s --", "Side");
     }
     upper(row1);
     upper(row2);
@@ -205,6 +209,21 @@ void drawBlade(const Status& s, const kd::Rgb8* lines, size_t lineCount, size_t 
         }
         drawSegments(2, kHeaderBar, s.holdSegments);
         display.setRotation(kLandscape);
+    }
+    // Which side of the Blade each Line faces, with Line 0 on top, looking
+    // along the Blade from the Hilt. Drawn upright above each bar.
+    if (!labelsShown && lineCount == 4) {
+        static const char* const kSides[4] = {"TOP", "R", "B", "L"};
+        display.setRotation(kUpright);
+        display.setTextSize(1);
+        display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+        display.setTextPadding(0);
+        display.setTextDatum(TC_DATUM);
+        for (int i = 0; i < 4; ++i)
+            display.drawString(kSides[i], kBarsTop + i * (kRowHeight + kRowGap) + kRowHeight / 2, kHeaderBand + 3);
+        display.setTextDatum(TL_DATUM);
+        display.setRotation(kLandscape);
+        labelsShown = true;
     }
     uint32_t t1 = micros();
     textUs = t1 - t0;

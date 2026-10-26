@@ -19,7 +19,7 @@ namespace kd {
 struct Settings {
     uint8_t palette = 0;
     uint8_t brightness = 2;
-    uint8_t girth = 2;
+    uint8_t girth = 1;  // 0.1 m: neighbouring Lines similar, twisting still rolls color
     uint8_t clearSky = 1;
 
     float brightnessValue() const;  // 0..1

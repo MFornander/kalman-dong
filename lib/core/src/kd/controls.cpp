@@ -7,7 +7,7 @@ namespace kd {
 namespace {
 
 const float kBrightnessSteps[] = {0.25f, 0.5f, 0.75f, 1.0f};
-const float kGirthSteps[] = {0.f, 0.15f, 0.3f, 0.6f};
+const float kGirthSteps[] = {0.f, 0.1f, 0.2f, 0.4f};
 const float kClearSkySteps[] = {0.f, 0.15f, 0.3f, 0.5f};
 
 template <typename T, unsigned N>
