@@ -48,7 +48,7 @@ Quick, amber for Long) and what letting go will do.
 | Button | Quick            | Long            | Held                 | Bare board | Other builds |
 |--------|------------------|-----------------|----------------------|------------|--------------|
 | A      | next Palette     | step Clear Sky  | -                    | USR3       | USR1         |
-| B      | step brightness  | step Girth      | -                    | USR2       | USR2         |
+| B      | cloud motion: frozen, 1x, 2x | step brightness | step Girth | USR2 | USR2 |
 | C      | Status page (again to close; closes itself after 30 s) | Re-level | Mounting Calibration | USR1 | USR3 |
 
 Each Dong Profile picks its button pins (`BUTTON_*_PIN` in
@@ -157,19 +157,20 @@ Blade view, `R`/`S` start/stop raw IMU streaming.
 1. **Boot and IMU.** The Blade view comes up right away (C shows the Status page). `i`
    should name the chip (LSM6DS3 / LSM6DS3TR-C / LSM6DSO) and report about
    833 Hz IMU and up to 240 fps.
-2. **Mounting.** Run Mounting Calibration (hold C for 5 s, see above). Then press `a`:
-   `Blade pitch` should read about +90 with the Blade at the ceiling and about
-   0 with it level.
+2. **Mounting.** Run Mounting Calibration (hold C for 5 s, see above). The
+   header's TIP should then read about +90 with the Blade at the ceiling and
+   about 0 with it level.
 3. **Ignition.** Reset with the board still: the bars extend from the left
    in about a second. Reset while shaking it: still done within two seconds.
-4. **Slicing.** Sweep the board slowly left and right and tilt it up and
-   down: the colors should change as if you are moving through fixed clouds,
-   and come back when you return to the same pointing direction.
-5. **Girth.** Long-press B to 0: all four bars match. Step it up and roll the
-   board about its long axis: colors roll between the bars.
-6. **Buttons.** A cycles Palettes, long A steps Clear Sky, B brightness, C
-   shows the Status page, long C Re-levels (the clouds jump to the "home"
-   view for wherever you point).
+4. **Slicing.** With the clouds frozen (the default; B quick cycles frozen,
+   1x, 2x), sweep the board left and right and tilt it up and down: the
+   colors change as you move through the clouds and return exactly when you
+   come back to the same pointing direction.
+5. **Girth.** Hold B for 5 s to step Girth; at 0 all four bars match. At
+   0.4 m, roll the board 90 deg about the Blade: the colors move one bar over
+   (what was on TOP shows on L after a clockwise roll seen from the Hilt).
+6. **Buttons.** See the table above; while a button is down the header shows
+   what letting go will do.
 7. **Settings survive power cycles.** Change something, wait 3 s, unplug,
    plug back in.
 8. **Rest.** Lay the board down: after 60 s the bars dim to 20%; pick it up

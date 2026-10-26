@@ -9,6 +9,7 @@ namespace {
 const float kBrightnessSteps[] = {0.25f, 0.5f, 0.75f, 1.0f};
 const float kGirthSteps[] = {0.f, 0.1f, 0.2f, 0.4f};
 const float kClearSkySteps[] = {0.f, 0.15f, 0.3f, 0.5f};
+const float kMotionSteps[] = {0.f, 1.f, 2.f};
 
 template <typename T, unsigned N>
 constexpr unsigned count(const T (&)[N]) { return N; }
@@ -20,12 +21,14 @@ uint8_t next(uint8_t v, unsigned n) { return static_cast<uint8_t>((v + 1) % n); 
 float Settings::brightnessValue() const { return kBrightnessSteps[brightness % count(kBrightnessSteps)]; }
 float Settings::girthValue() const { return kGirthSteps[girth % count(kGirthSteps)]; }
 float Settings::clearSkyValue() const { return kClearSkySteps[clearSky % count(kClearSkySteps)]; }
+float Settings::motionValue() const { return kMotionSteps[motion % count(kMotionSteps)]; }
 
 void Settings::sanitize() {
     palette %= paletteCount();
     brightness %= count(kBrightnessSteps);
     girth %= count(kGirthSteps);
     clearSky %= count(kClearSkySteps);
+    motion %= count(kMotionSteps);
 }
 
 ButtonTracker::Press ButtonTracker::update(bool down, uint32_t nowMs) {
@@ -82,7 +85,7 @@ Controls::PressInProgress Controls::pressInProgress(uint32_t nowMs) const {
 ControlEvent Controls::apply(Button b, ButtonTracker::Press p, uint32_t nowMs) {
     if (p == ButtonTracker::Press::Held) {
         if (b == Button::C) return {ControlEvent::Kind::CalibrateMounting, Setting::None};
-        return {};  // A and B have no Held action yet
+        if (b == Button::A) return {};  // no Held action yet
     }
     const bool isLong = p == ButtonTracker::Press::Long;
     ControlEvent e{ControlEvent::Kind::Changed, Setting::None};
@@ -97,12 +100,15 @@ ControlEvent Controls::apply(Button b, ButtonTracker::Press p, uint32_t nowMs) {
             }
             break;
         case Button::B:
-            if (isLong) {
+            if (p == ButtonTracker::Press::Held) {
                 settings_.girth = next(settings_.girth, count(kGirthSteps));
                 e.changed = Setting::Girth;
-            } else {
+            } else if (isLong) {
                 settings_.brightness = next(settings_.brightness, count(kBrightnessSteps));
                 e.changed = Setting::Brightness;
+            } else {
+                settings_.motion = next(settings_.motion, count(kMotionSteps));
+                e.changed = Setting::Motion;
             }
             break;
         case Button::C:

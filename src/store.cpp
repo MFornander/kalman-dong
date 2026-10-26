@@ -18,6 +18,7 @@ kd::Settings loadSettings() {
         s.brightness = prefs.getUChar("bright", s.brightness);
         s.girth = prefs.getUChar("girth", s.girth);
         s.clearSky = prefs.getUChar("clearsky", s.clearSky);
+        s.motion = prefs.getUChar("motion", s.motion);
     }
     s.sanitize();
     return s;
@@ -29,6 +30,7 @@ void saveSettings(const kd::Settings& s) {
     prefs.putUChar("bright", s.brightness);
     prefs.putUChar("girth", s.girth);
     prefs.putUChar("clearsky", s.clearSky);
+    prefs.putUChar("motion", s.motion);
 }
 
 kd::Vec3 loadGyroBias() {

@@ -46,17 +46,25 @@ TEST_CASE("quick A cycles Palettes, long A steps Clear Sky") {
     CHECK(h.settings.palette == 0);  // a long press is not also a quick one
 }
 
-TEST_CASE("quick B steps brightness, long B steps Girth through 0 to 0.4 m") {
+TEST_CASE("quick B cycles cloud motion, long B steps brightness, held B steps Girth") {
     Hand h;
+    CHECK(h.settings.motionValue() == 0.f);  // clouds start frozen
+    CHECK(h.tap(1).changed == Setting::Motion);
+    CHECK(h.settings.motionValue() == 1.f);
+    h.tap(1);
+    CHECK(h.settings.motionValue() == 2.f);
+    h.tap(1);
+    CHECK(h.settings.motionValue() == 0.f);
+
     float b0 = h.settings.brightnessValue();
-    CHECK(h.tap(1).changed == Setting::Brightness);
+    CHECK(h.press(1).changed == Setting::Brightness);
     CHECK(h.settings.brightnessValue() != b0);
 
     h.settings.girth = 0;
     float seen[4];
     for (float& g : seen) {
         g = h.settings.girthValue();
-        CHECK(h.press(1).changed == Setting::Girth);
+        CHECK(h.hold(1, 5500).changed == Setting::Girth);
     }
     CHECK(seen[0] == 0.f);
     CHECK(seen[3] == doctest::Approx(0.4f));
@@ -163,10 +171,9 @@ TEST_CASE("a press in progress shows half-second segments and what letting go wi
     CHECK(p.onRelease == ButtonTracker::Press::None);  // Held: letting go does nothing
 }
 
-TEST_CASE("holding A or B past 5 seconds does nothing, yet") {
+TEST_CASE("holding A past 5 seconds does nothing, yet") {
     Hand h;
     Settings before = h.settings;
     CHECK(h.hold(0, 6000).kind == ControlEvent::Kind::None);
-    CHECK(h.hold(1, 6000).kind == ControlEvent::Kind::None);
     CHECK(h.settings == before);
 }
