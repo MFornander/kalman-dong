@@ -23,6 +23,9 @@ defined in [CONTEXT.md](CONTEXT.md); key decisions are in [docs/adr/](docs/adr/)
 - One battery pack feeds the Pixels and the board's 5 V input (via a diode).
   Pack voltage can be sensed through a divider on a free pad.
 
+Wiring, power and first light for the Pixels:
+[docs/led-build.md](docs/led-build.md).
+
 Each physical build is a **Dong Profile** in [src/profiles.h](src/profiles.h):
 Blade length, Pixels per Line, how Strands fold into Lines, pins, IMU axis
 mapping, Power Budget, battery. The IMU must be mapped so body +X points from
