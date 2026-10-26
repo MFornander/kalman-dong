@@ -11,6 +11,14 @@
 // SK9822 / APA102 color byte order on the wire, for every profile below.
 #define LED_WIRE_ORDER "BGR"
 
+#if defined(DONG_PROFILE_SCREEN)
+// On the bare board the most-used button (A: Palette) sits on USR3, the
+// easiest one to press.
+#define BUTTON_A_PIN 11  // USR3
+#define BUTTON_B_PIN 44  // USR2
+#define BUTTON_C_PIN 43  // USR1
+#endif
+
 #if defined(DONG_PROFILE_PROTO) || defined(DONG_PROFILE_SCREEN)
 // 1 m Blade, 60 Pixels/m, one Strand folded up-down-up-down through 4 Lines.
 // The "screen" variant is for bench testing the bare board with the Blade
@@ -37,8 +45,9 @@ inline const kd::DongProfile& dongProfile() {
         p.power.budgetMilliamps = 3000.f;  // a typical 5 V / 3 A power bank
 #ifdef DONG_PROFILE_SCREEN
         p.name = "screen";
+        // Buttons: see BUTTON_*_PIN below.
         // Body +X = screen right, +Y = screen top, +Z = out of the screen.
-        // A guess until Mounting Calibration (A + C) is run on the board.
+        // A guess until Mounting Calibration (hold C for 5 s) is run on the board.
         p.imuAxes = {{0, 1, 2}, {1, 1, 1}};
 #endif
         return p;
@@ -111,6 +120,15 @@ inline const kd::DongProfile& dongProfile() {
 
 #else
 #error "Select a Dong Profile with -DDONG_PROFILE_PROTO, _SCREEN, _2M or _LIGHTSWARM"
+#endif
+
+// Buttons A, B, C; a profile may wire them to other pins. The carrier's own
+// buttons (checked on the board): USR1 = GPIO43 (also UART0's TX),
+// USR2 = GPIO44 (UART0's RX), USR3 = GPIO11.
+#ifndef BUTTON_A_PIN
+#define BUTTON_A_PIN 43  // USR1
+#define BUTTON_B_PIN 44  // USR2
+#define BUTTON_C_PIN 11  // USR3
 #endif
 
 static_assert(BATTERY_PIN < 0 || (BATTERY_PIN >= 1 && BATTERY_PIN <= 20),

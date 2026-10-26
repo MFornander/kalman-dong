@@ -21,8 +21,11 @@ struct Status {
     float imuHz = 0.f;
     bool atRest = false;
     bool recording = false;
-    int bladePitch = 0;  // degrees above level, rounded; for checking the Mounting by eye
+    int bladePitch = 0;      // degrees above level, rounded to 5
+    int bladeHeading = 0;    // degrees side to side from the Re-level heading, clockwise positive, rounded to 5
+    bool headingKnown = false;  // false while the Blade points nearly straight up or down
     char banner[40] = "";  // e.g. Mounting Calibration instructions; shown prominently
+    int holdSegments = -1;  // while a button is held: half-second segments filled
 };
 
 namespace status_display {
@@ -33,6 +36,12 @@ bool begin();
 
 void setBladeView(bool on);
 bool bladeView();
+
+// The page on show: "off", "status" or "blade".
+const char* pageName();
+
+// Microseconds the last full draw of the Status page took.
+uint32_t statusDrawUs();
 
 // Microseconds the last Blade view spent drawing its header text and bars.
 void drawTimes(uint32_t& textUs, uint32_t& barsUs);

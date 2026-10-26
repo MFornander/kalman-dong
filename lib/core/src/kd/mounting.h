@@ -37,6 +37,10 @@ public:
     Step step() const { return step_; }
     bool active() const { return step_ == Step::TipUp || step_ == Step::LineZeroUp; }
 
+    // Whether the Dong has been turned into the current pose yet (the hold
+    // only counts after that).
+    bool turned() const { return turned_; }
+
     // 0..1 progress through holding the current pose.
     float holdProgress() const;
 
