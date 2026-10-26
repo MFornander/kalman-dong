@@ -35,37 +35,46 @@ void Settings::sanitize() {
 }
 
 ButtonTracker::Press ButtonTracker::update(bool down, uint32_t nowMs) {
-    if (down != raw_) {
-        raw_ = down;
-        rawSinceMs_ = nowMs;
-    }
+    // A level that has lasted kDebounceMs is real, and dates from when it
+    // began, so a press is timed from its edges however late or sparsely it
+    // is looked at.
     Press out = Press::None;
     if (raw_ != stable_ && nowMs - rawSinceMs_ >= kDebounceMs) {
         stable_ = raw_;
         if (stable_) {
-            pressedAtMs_ = nowMs;
+            pressedAtMs_ = rawSinceMs_;
             held_ = false;
-        } else {
-            if (!held_) out = nowMs - pressedAtMs_ >= kLongMs ? Press::Long : Press::Quick;
+        } else if (!held_) {
+            out = rawSinceMs_ - pressedAtMs_ >= kLongMs ? Press::Long : Press::Quick;
         }
     }
-    if (stable_ && !held_ && nowMs - pressedAtMs_ >= kHeldMs) {
+    if (down != raw_) {
+        raw_ = down;
+        rawSinceMs_ = nowMs;
+    }
+    // Held once the press has lasted kHeldMs, counting only the time it is
+    // known to have been down (not past a release still being debounced).
+    const uint32_t downUntilMs = raw_ ? nowMs : rawSinceMs_;
+    if (stable_ && !held_ && downUntilMs - pressedAtMs_ >= kHeldMs) {
         held_ = true;
         out = Press::Held;
     }
     return out;
 }
 
-ControlEvent Controls::update(bool aDown, bool bDown, bool cDown, uint32_t nowMs) {
+ControlEvents Controls::update(bool aDown, bool bDown, bool cDown, uint32_t nowMs) {
+    // Samples can arrive a millisecond out of order (a sampler racing the
+    // main loop); time never runs backwards here.
+    if (started_ && static_cast<int32_t>(nowMs - lastMs_) < 0) nowMs = lastMs_;
+    started_ = true;
+    lastMs_ = nowMs;
     const bool down[3] = {aDown, bDown, cDown};
-    ButtonTracker::Press presses[3];
-    for (int i = 0; i < 3; ++i) presses[i] = buttons_[i].update(down[i], nowMs);
-
-    ControlEvent result;
+    ControlEvents result;
     for (int i = 0; i < 3; ++i) {
-        if (presses[i] == ButtonTracker::Press::None) continue;
-        ControlEvent e = apply(static_cast<Button>(i), presses[i], nowMs);
-        if (e.kind != ControlEvent::Kind::None) result = e;
+        const ButtonTracker::Press p = buttons_[i].update(down[i], nowMs);
+        if (p == ButtonTracker::Press::None) continue;
+        const ControlEvent e = apply(static_cast<Button>(i), p, nowMs);
+        if (e.kind != ControlEvent::Kind::None) result.events[result.count++] = e;
     }
     return result;
 }

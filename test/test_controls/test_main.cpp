@@ -15,13 +15,10 @@ struct Hand {
     ControlEvent hold(int button, uint32_t ms) {
         ControlEvent last;
         for (uint32_t t = 0; t < ms; t += 5) {
-            ControlEvent e = controls.update(button == 0, button == 1, button == 2, now += 5);
-            if (e.kind != ControlEvent::Kind::None) last = e;
+            for (const ControlEvent& e : controls.update(button == 0, button == 1, button == 2, now += 5)) last = e;
         }
-        for (int i = 0; i < 20; ++i) {
-            ControlEvent e = controls.update(false, false, false, now += 5);
-            if (e.kind != ControlEvent::Kind::None) last = e;
-        }
+        for (int i = 0; i < 20; ++i)
+            for (const ControlEvent& e : controls.update(false, false, false, now += 5)) last = e;
         return last;
     }
     ControlEvent tap(int b) { return hold(b, 120); }      // Quick
@@ -86,15 +83,11 @@ TEST_CASE("quick C wakes the display, long C Re-levels") {
 TEST_CASE("a long press acts when the button is released") {
     Hand h;
     ControlEvent fired;
-    for (uint32_t t = 0; t < 3000; t += 5) {
-        ControlEvent e = h.controls.update(false, false, true, h.now += 5);
-        if (e.kind != ControlEvent::Kind::None) fired = e;
-    }
+    for (uint32_t t = 0; t < 3000; t += 5)
+        for (const ControlEvent& e : h.controls.update(false, false, true, h.now += 5)) fired = e;
     CHECK(fired.kind == ControlEvent::Kind::None);  // still held: nothing yet
-    for (int i = 0; i < 20; ++i) {
-        ControlEvent e = h.controls.update(false, false, false, h.now += 5);
-        if (e.kind != ControlEvent::Kind::None) fired = e;
-    }
+    for (int i = 0; i < 20; ++i)
+        for (const ControlEvent& e : h.controls.update(false, false, false, h.now += 5)) fired = e;
     CHECK(fired.kind == ControlEvent::Kind::Relevel);
 }
 
@@ -135,15 +128,12 @@ TEST_CASE("holding C for 5 seconds starts Mounting Calibration, and nothing else
     Hand h;
     Settings before = h.settings;
     int calibrations = 0, others = 0;
-    for (uint32_t t = 0; t < 7000; t += 5) {
-        ControlEvent e = h.controls.update(false, false, true, h.now += 5);
-        calibrations += e.kind == ControlEvent::Kind::CalibrateMounting;
-        others += e.kind != ControlEvent::Kind::None && e.kind != ControlEvent::Kind::CalibrateMounting;
-    }
-    for (int i = 0; i < 20; ++i) {
-        ControlEvent e = h.controls.update(false, false, false, h.now += 5);
-        others += e.kind != ControlEvent::Kind::None;  // no Re-level on release
-    }
+    for (uint32_t t = 0; t < 7000; t += 5)
+        for (const ControlEvent& e : h.controls.update(false, false, true, h.now += 5)) {
+            calibrations += e.kind == ControlEvent::Kind::CalibrateMounting;
+            others += e.kind != ControlEvent::Kind::CalibrateMounting;
+        }
+    for (int i = 0; i < 20; ++i) others += h.controls.update(false, false, false, h.now += 5).count;  // no Re-level on release
     CHECK(calibrations == 1);
     CHECK(others == 0);
     CHECK(h.settings == before);

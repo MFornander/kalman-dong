@@ -43,6 +43,8 @@ enum class Button : uint8_t { A, B, C };
 
 // Debounces one button and reports its presses: Quick or Long on release,
 // Held the moment the press reaches kHeldMs (and then nothing on release).
+// Presses are timed from the samples where the level first changed, so they
+// can be fed late (queued in a ButtonLog) and still come out right.
 class ButtonTracker {
 public:
     enum class Press : uint8_t { None, Quick, Long, Held };
@@ -74,6 +76,15 @@ struct ControlEvent {
     Setting changed = Setting::None;
 };
 
+// What one update did: at most one event per button.
+struct ControlEvents {
+    ControlEvent events[3];
+    int count = 0;
+
+    const ControlEvent* begin() const { return events; }
+    const ControlEvent* end() const { return events + count; }
+};
+
 class Controls {
 public:
     static constexpr uint32_t kSaveQuietMs = 3000;
@@ -84,8 +95,8 @@ public:
 
     explicit Controls(Settings& settings) : settings_(settings) {}
 
-    // Feed the raw (debounced here) button levels; returns at most one event.
-    ControlEvent update(bool aDown, bool bDown, bool cDown, uint32_t nowMs);
+    // Feed the raw (debounced here) button levels.
+    ControlEvents update(bool aDown, bool bDown, bool cDown, uint32_t nowMs);
 
     // True once settings changed and no button has changed them for a while.
     bool shouldSave(uint32_t nowMs) const { return dirty_ && nowMs - lastChangeMs_ >= kSaveQuietMs; }
@@ -106,6 +117,8 @@ private:
     ButtonTracker buttons_[3];
     bool dirty_ = false;
     uint32_t lastChangeMs_ = 0;
+    bool started_ = false;
+    uint32_t lastMs_ = 0;  // latest time fed to update()
 };
 
 }  // namespace kd

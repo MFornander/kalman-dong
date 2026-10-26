@@ -152,7 +152,9 @@ pio device monitor -e xiao_screen
 Serial commands: `i` status plus per-stage frame, IMU and display timings, `c`
 start Mounting Calibration, `f` switch orientation filter (Mahony / Kalman),
 `a` toggle axis check (5 Hz), `b` Cloud Field micro-benchmark, `v` toggle the
-Blade view, `R`/`S` start/stop raw IMU streaming.
+Blade view, `R`/`S` start/stop raw IMU streaming, `z` log a line every frame
+for 3 s (then `i` shows the worst loop, which should stay a few ms even with
+the port closed).
 
 1. **Boot and IMU.** The Blade view comes up right away (C shows the Status page). `i`
    should name the chip (LSM6DS3 / LSM6DS3TR-C / LSM6DSO) and report about

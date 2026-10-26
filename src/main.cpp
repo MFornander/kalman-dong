@@ -14,6 +14,7 @@
 
 #include <vector>
 
+#include "kd/button_log.h"
 #include "kd/controls.h"
 #include "kd/filter_bank.h"
 #include "imu_lsm6.h"
@@ -86,6 +87,19 @@ Sk9822Spi leds;
 kd::Settings settings;
 kd::Controls controls(settings);
 
+// The buttons are sampled on a timer, not in loop(): a press is timed from its
+// real edges even while the loop is stuck in a slow draw or write.
+constexpr uint32_t kButtonSampleUs = 5000;
+kd::ButtonLog buttonLog;
+
+uint8_t readButtons() {
+    return static_cast<uint8_t>((gpio_get_level(static_cast<gpio_num_t>(kButtonA)) == 0) |
+                                (gpio_get_level(static_cast<gpio_num_t>(kButtonB)) == 0) << 1 |
+                                (gpio_get_level(static_cast<gpio_num_t>(kButtonC)) == 0) << 2);
+}
+
+void sampleButtons(void*) { buttonLog.sample(readButtons(), millis()); }
+
 // Status and the latest Lines, shared with the display task.
 portMUX_TYPE statusMux = portMUX_INITIALIZER_UNLOCKED;
 Status status;
@@ -96,7 +110,9 @@ volatile bool toggleStatusPage = false;  // C quick: open the Status page, or cl
 // Per-stage frame timing (us, smoothed), printed by 'i'.
 struct FrameTiming {
     float render = 0, limit = 0, show = 0, total = 0;
+    uint32_t worstUs = 0;  // slowest whole loop since the last 'i'
 } timing;
+uint32_t logTestUntilMs = 0;  // serial 'z': log a line every frame for a while
 
 // Latest raw IMU reading, for the 'a' axis-check printout.
 portMUX_TYPE readingMux = portMUX_INITIALIZER_UNLOCKED;
@@ -265,6 +281,9 @@ void handleSerial() {
             case 'c':
                 startCalibration();
                 break;
+            case 'z':  // log a line every frame for 3 s, to test what logging costs
+                logTestUntilMs = millis() + 3000;
+                break;
             case 'w':  // as if C were pressed: open or close the Status page
                 toggleStatusPage = true;
                 break;
@@ -284,9 +303,11 @@ void handleSerial() {
                               tracker.gyroBias().x, tracker.gyroBias().y, tracker.gyroBias().z);
                 Serial.printf(
                     "# frame us: render %.0f limit+scatter %.0f show %.0f (waited %lu, sends %lu) total %.0f | "
-                    "ignited %d rest %.1fs\n",
+                    "ignited %d rest %.1fs | worst loop %lu us\n",
                     timing.render, timing.limit, timing.show, (unsigned long)leds.lastWaitUs(),
-                    (unsigned long)leds.sendUs(), timing.total, tracker.ignited(), tracker.restSeconds());
+                    (unsigned long)leds.sendUs(), timing.total, tracker.ignited(), tracker.restSeconds(),
+                    (unsigned long)timing.worstUs);
+                timing.worstUs = 0;
                 Serial.printf("# imu us: read %.0f track %.0f (filter %s)\n", imuReadUs, imuTrackUs,
                               tracker.filter().name());
                 {
@@ -366,6 +387,9 @@ float readBattery(float previous) {
 
 void setup() {
     Serial.begin(921600);
+    // Never wait on USB: with the port closed, a full buffer made every log
+    // line block for up to 2 s and stalled the whole loop.
+    Serial.setTxTimeoutMs(0);
     // Buttons go straight through ESP-IDF. GPIO43 (USR1) boots as UART0's TX
     // and the Arduino core keeps it registered to the UART, so it must be
     // reset to plain GPIO (detaching the UART) before it reads a press.
@@ -375,6 +399,12 @@ void setup() {
         gpio_set_direction(g, GPIO_MODE_INPUT);
         gpio_set_pull_mode(g, GPIO_PULLUP_ONLY);
     }
+    esp_timer_create_args_t buttonTimer = {};
+    buttonTimer.callback = sampleButtons;
+    buttonTimer.name = "buttons";
+    esp_timer_handle_t buttonTimerHandle;
+    esp_timer_create(&buttonTimer, &buttonTimerHandle);
+    esp_timer_start_periodic(buttonTimerHandle, kButtonSampleUs);
 
     store::begin();
     settings = store::loadSettings();
@@ -440,23 +470,13 @@ void loop() {
 
     handleSerial();
     drainRecording();
+    if (static_cast<int32_t>(logTestUntilMs - nowMs) > 0) Serial.printf("# log test %lu\n", (unsigned long)nowMs);
     if (printAxes && !recording && nowMs - lastAxisPrintMs >= 200) {
         printAxisCheck();
         lastAxisPrintMs = nowMs;
     }
 
-    const bool down[3] = {gpio_get_level(static_cast<gpio_num_t>(kButtonA)) == 0,
-                          gpio_get_level(static_cast<gpio_num_t>(kButtonB)) == 0,
-                          gpio_get_level(static_cast<gpio_num_t>(kButtonC)) == 0};
-    static bool wasDown[3] = {false, false, false};
-    for (int i = 0; i < 3; ++i) {
-        if (down[i] != wasDown[i]) {
-            wasDown[i] = down[i];
-            Serial.printf("# button %c %s\n", "ABC"[i], down[i] ? "down" : "up");
-        }
-    }
-    kd::ControlEvent e = controls.update(down[0], down[1], down[2], nowMs);
-    if (e.kind != kd::ControlEvent::Kind::None) {
+    auto onControl = [&](const kd::ControlEvent& e) {
         static const char* const kKinds[] = {"none", "changed", "wake display", "re-level", "calibrate mounting"};
         static const char* const kSettings[] = {"",      "Palette",      "Clear Sky",  "brightness",
                                                 "Girth", "cloud motion", "cloud size"};
@@ -504,9 +524,24 @@ void loop() {
         } else {
             wakeDisplay = true;
         }
+    };
+    // Feed every queued button change at the time it was sampled, then the
+    // current level at a time read afterwards, so time only moves forward.
+    static uint8_t buttonsDown = 0;
+    kd::ButtonLog::Sample sample;
+    while (buttonLog.pop(sample)) {
+        for (int i = 0; i < 3; ++i)
+            if (((sample.down ^ buttonsDown) >> i) & 1)
+                Serial.printf("# button %c %s\n", "ABC"[i], (sample.down >> i) & 1 ? "down" : "up");
+        buttonsDown = sample.down;
+        for (const kd::ControlEvent& e : controls.update(sample.down & 1, sample.down & 2, sample.down & 4, sample.ms))
+            onControl(e);
     }
+    const uint32_t buttonsMs = millis();
+    for (const kd::ControlEvent& e : controls.update(buttonsDown & 1, buttonsDown & 2, buttonsDown & 4, buttonsMs))
+        onControl(e);
     // While a button is held, say what letting go will do (kd/controls.h).
-    const kd::Controls::PressInProgress pressNow = controls.pressInProgress(nowMs);
+    const kd::Controls::PressInProgress pressNow = controls.pressInProgress(buttonsMs);
     const int holdSegments = pressNow.button >= 0 ? pressNow.segments : -1;
     if (pressNow.button >= 0) {
         static const char* const kOnRelease[3][3] = {
@@ -521,7 +556,7 @@ void loop() {
         bannerUntilMs = nowMs + 300;
         if (!status_display::bladeView()) wakeDisplay = true;  // the Status page shows the bar
     }
-    if (controls.shouldSave(nowMs)) {
+    if (controls.shouldSave(buttonsMs)) {
         store::saveSettings(settings);
         controls.markSaved();
     }
@@ -626,6 +661,7 @@ void loop() {
     // Pixels light once the queued frame has been clocked out: predict that
     // far ahead next frame.
     const int64_t frameUs = esp_timer_get_time() - frameStartUs;
+    if (frameUs > timing.worstUs) timing.worstUs = static_cast<uint32_t>(frameUs);
     lookahead += ((frameUs + leds.sendUs()) * 1e-6f - lookahead) * 0.05f;
     fps += (1e6f / float(frameUs < kMinFrameUs ? kMinFrameUs : frameUs) - fps) * 0.05f;
 
