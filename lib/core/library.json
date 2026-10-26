@@ -1,0 +1,11 @@
+{
+  "name": "core",
+  "version": "0.1.0",
+  "description": "Kalman Dong core: motion tracking, Cloud Field and rendering. Pure C++17, no Arduino; runs on the Dong and on the host.",
+  "frameworks": "*",
+  "platforms": "*",
+  "build": {
+    "flags": ["-std=gnu++17", "-O2"],
+    "unflags": ["-Os"]
+  }
+}
