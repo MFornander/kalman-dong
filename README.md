@@ -198,11 +198,13 @@ error-state Kalman filter with innovation gating; `f` switches live. In
 simulation the Kalman filter holds tilt 13x better when the gyro bias shifts
 mid-swing and somewhat better through big swings, and is slightly worse
 under hand jitter (`pio test -e native -f test_motion -v` prints the
-comparison). Pick the default from real swing recordings.
+comparison). On real hand-held recordings (`test/data/bench-*`) they tie on
+tilt (about 1 deg in fast swings, 4.5 deg in slow sweeps, at quiet moments
+mid-motion), while Mahony holds heading better at rest (0.07 vs 1.0 deg over
+30 s) at half the CPU, so Mahony stays the default.
 
 IMU cost per sample on the board (budget 1224 us at 817 Hz): I2C read ~550
 us, tracking ~100 us with Mahony and ~200 us with Kalman.
 
-Still to check: Mounting Calibration with real poses, swing recordings to
-choose the default filter, and on a real strip: LED colors, signal quality at
+Still to check, on a real strip: LED colors, signal quality at
 8-12 MHz through the level shifter, and current draw.

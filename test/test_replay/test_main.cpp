@@ -45,6 +45,10 @@ struct ReplayResult {
     float worstRestTiltDeg = 0;  // estimated vs measured "up" while at Rest
     bool finite = true;
     float headingDriftDeg = 0;  // heading change from 1 s after Ignition to the end
+    // Tilt error at quiet moments mid-motion (slow rotation, |accel| near 1 g),
+    // where the accelerometer shows true down: the only ground truth there is.
+    float quietTiltMeanDeg = 0;
+    int quietSamples = 0;
 };
 
 ReplayResult replay(const std::vector<Row>& rows, OrientationFilter& filter) {
@@ -81,12 +85,19 @@ ReplayResult replay(const std::vector<Row>& rows, OrientationFilter& filter) {
             d = std::fabs(std::remainder(d, 2.f * kPi));
             result.headingDriftDeg = radToDeg(d);
         }
+        if (tracker.ignited() && !tracker.atRest() && s.gyro.norm() < 0.35f &&
+            std::fabs(s.accel.norm() - kGravity) < 0.25f) {
+            Vec3 upEstimate = p.orientation.conj().rotate({0, 0, 1});
+            result.quietTiltMeanDeg += radToDeg(std::acos(clampf(upEstimate.dot(s.accel.normalized()), -1.f, 1.f)));
+            ++result.quietSamples;
+        }
         if (tracker.ignited() && tracker.restSeconds() > 1.f) {
             Vec3 upEstimate = p.orientation.conj().rotate({0, 0, 1});
             float err = radToDeg(std::acos(clampf(upEstimate.dot(s.accel.normalized()), -1.f, 1.f)));
             result.worstRestTiltDeg = std::fmax(result.worstRestTiltDeg, err);
         }
     }
+    if (result.quietSamples) result.quietTiltMeanDeg /= result.quietSamples;
     return result;
 }
 
@@ -137,7 +148,9 @@ TEST_CASE("every recording in test/data replays cleanly") {
             if (entry.path().filename().string().rfind("bench-desk", 0) == 0) CHECK(r.learnedBias);
             MESSAGE(entry.path().filename().string()
                     << ": " << std::string(filter->name()) << " ignited at " << r.ignitedAt << " s, worst tilt at Rest "
-                    << r.worstRestTiltDeg << " deg, heading drift " << r.headingDriftDeg << " deg");
+                    << r.worstRestTiltDeg << " deg, heading change " << r.headingDriftDeg
+                    << " deg, tilt error at quiet moments in motion " << r.quietTiltMeanDeg << " deg ("
+                    << r.quietSamples << " samples)");
         }
     }
 }
