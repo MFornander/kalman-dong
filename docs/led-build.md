@@ -5,16 +5,7 @@ Dong, power them, and bring them up safely. Pins, pad names and the firmware
 settings match [src/profiles.h](../src/profiles.h); words like Line, Strand and
 Power Budget are defined in [CONTEXT.md](../CONTEXT.md).
 
-```
- battery ── fuse ──┬──────────────── 5 V to both ends of every Line ──────────┐
-                   │                                                           │
-                   ├─ Schottky ─► VBUS pad (powers the board)                  │
-                   │                                                           │
-  XIAO GPIO38 ─► 74AHCT125 ─ 33 Ω ─► DATA  ┐                                   │
-  XIAO GPIO39 ─► 74AHCT125 ─ 33 Ω ─► CLOCK ┴─► Line 0 ↑  Line 1 ↓  Line 2 ↑  Line 3 ↓
-                   │                         (one Strand, folded at the tip and the Hilt)
- GND ──────────────┴──── board, level shifter, every Line, battery: one common ground
-```
+![Wiring: battery, fuse and Schottky diode feed the Pixels and the board; GPIO38 and GPIO39 go through a 74AHCT125 and 33 ohm resistors into the Strand](media/led-wiring.svg)
 
 ## Parts
 
@@ -67,14 +58,7 @@ The profiles fold one Strand up and down the Blade: Line 0 from the Hilt up to
 the tip, Line 1 back down, Line 2 up, Line 3 down. Data enters at the Hilt end
 of Line 0. Lines face four sides of the rod, 90° apart, in order around it.
 
-```
-  tip    ╭───────╮         ╭───────╮
-         │       │         │       │
-       Line 0  Line 1    Line 2  Line 3
-         ↑       ↓         ↑       ↓
-         │       │         │       │
-  Hilt  DATA IN  ╰─────────╯      end
-```
+![One Strand folded into four Lines: data enters Line 0 at the Hilt, folds at the tip into Line 1, at the Hilt into Line 2, at the tip into Line 3; 5 V fed at both ends of every Line](media/strand-fold.svg)
 
 - Cut the strip at each fold and bridge DO/CO to the next segment's DI/CI with
   short wires. If you bend the strip instead, the Pixels hidden in the fold
