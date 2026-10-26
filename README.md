@@ -1,6 +1,13 @@
 # kalman-dong
 Hippie Lightsaber
 
+[![The Dong swinging through an invisible rainbow fog, lighting up only the slice it passes through](docs/media/slicing-the-rainbow-fog.webp)](docs/media/slicing-the-rainbow-fog.mp4)
+
+**[Watch with sound (MP4, 15 s)](docs/media/slicing-the-rainbow-fog.mp4)**: an
+invisible rainbow fog hangs in the air, and the Dong lights up only the slice
+it passes through, like a laser pointer in a smoky room. The fog and the
+Pixels' colors come from the firmware's own Cloud Field.
+
 A fur-covered LED staff that uses its motion sensor to make you feel like you
 are slicing through slowly drifting rainbow clouds hanging in the air around
 you. The vocabulary (Dong, Blade, Line, Cloud Field, Girth, Push, ...) is
