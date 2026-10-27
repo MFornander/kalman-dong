@@ -314,9 +314,41 @@ void applyMounting(const kd::Quat& next) {
     tracker.begin(mounting.rotate(sensorBias));
 }
 
+// Serial '?': every command, grouped by what it's for.
+void printHelp() {
+    Serial.print(
+        "# kalman-dong serial commands (one key each, no Enter needed)\n"
+        "#\n"
+        "# Status\n"
+        "#   ?  this help (also h)\n"
+        "#   i  status: profile, IMU, filter, rates, frame and display timings, knobs\n"
+        "#   p  raw button levels (0 = pressed) and how GPIO43 is wired\n"
+        "#\n"
+        "# Controls\n"
+        "#   w  as if C were pressed: open or close the Status page\n"
+        "#   v  Blade view on or off\n"
+        "#   c  start Mounting Calibration (as holding C for 5 s)\n"
+        "#   k  log the 8-Encoder unit's counts, pushes and switch as they change (again: stop)\n"
+        "#\n"
+        "# Motion\n"
+        "#   f  next orientation filter (Mahony, Kalman)\n"
+        "#   a  axis check, 5 times a second: which sensor axis sees gravity, where the Blade points (again: stop)\n"
+        "#   R  start streaming raw IMU samples as CSV (tools/capture_imu.py)\n"
+        "#   S  stop streaming\n"
+        "#\n"
+        "# Performance\n"
+        "#   b  Cloud Field micro-benchmark\n"
+        "#   z  log a line every frame for 3 s, then 'i' shows the worst loop\n");
+}
+
 void handleSerial() {
     while (Serial.available()) {
-        switch (Serial.read()) {
+        const int key = Serial.read();
+        switch (key) {
+            case '?':
+            case 'h':
+                printHelp();
+                break;
             case 'R':
                 xQueueReset(recordQueue);
                 Serial.printf("# kalman-dong imu v1 profile=%s chip=%s rate=%.0f frame=sensor\n", profile.name,
@@ -423,6 +455,7 @@ void handleSerial() {
                 }
                 break;
             default:
+                if (key > ' ' && key < 127) Serial.printf("# unknown command '%c'; ? for help\n", key);
                 break;
         }
     }
@@ -490,6 +523,7 @@ float readBattery(float previous) {
 }  // namespace
 
 void setup() {
+    Serial.setTxBufferSize(4096);  // room for '?' and 'i' in one go: writes never wait (below)
     Serial.begin(921600);
     // Never wait on USB: with the port closed, a full buffer made every log
     // line block for up to 2 s and stalled the whole loop.
@@ -564,6 +598,7 @@ void setup() {
     wakeDisplay = false;  // go straight to the Blade view so Ignition is visible
 #endif
     xTaskCreatePinnedToCore(displayTask, "display", 6144, nullptr, 1, nullptr, 0);
+    Serial.println("# kalman-dong ready; ? for help");
 }
 
 void loop() {

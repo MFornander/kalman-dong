@@ -193,7 +193,7 @@ pio run -e xiao_screen -t upload
 pio device monitor -e xiao_screen
 ```
 
-Serial commands: `i` status plus per-stage frame, IMU and display timings, `c`
+Type `?` in the monitor for every serial command. In short: `i` status plus per-stage frame, IMU and display timings, `c`
 start Mounting Calibration, `f` switch orientation filter (Mahony / Kalman),
 `a` toggle axis check (5 Hz), `b` Cloud Field micro-benchmark, `k` log the
 8-Encoder unit's counts, pushes and switch as they change, `v` toggle the
