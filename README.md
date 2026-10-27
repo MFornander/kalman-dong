@@ -1,5 +1,6 @@
-# kalman-dong
-Hippie Lightsaber
+# Hippie Lightsaber
+
+Portable Rainbow LEDs using Kalman Filters and Voice Commands
 
 [![The Dong swinging through an invisible rainbow fog, lighting up only the slice it passes through](docs/media/slicing-the-rainbow-fog.webp)](docs/media/slicing-the-rainbow-fog.mp4)
 
