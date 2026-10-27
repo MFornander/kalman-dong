@@ -395,7 +395,7 @@ void printHelp() {
         "#   l  log the mic's level and Loudness 10 times a second (again: stop)\n"
         "#\n"
 #ifdef KD_VOICE
-        "# Voice (hold USR3 and speak two words: next palette, lights up, go faster, bigger clouds, ...)\n"
+        "# Voice (hold USR3 and speak two words: next palette, lights up, faster clouds, bigger clouds, ...)\n"
         "#   t  listen for 3 s, as if USR3 were held\n"
         "#   g  next voice gain (1x to 32x; 'i' shows it)\n"
         "#   u  next silence wait after letting go (600, 450, 300, 200 ms)\n"

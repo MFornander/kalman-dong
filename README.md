@@ -119,8 +119,8 @@ while you still hold the button.
 |-----|------|
 | *next palette*, *next colors* / *previous palette*, *previous colors* | step the Palette |
 | *lights up*, *more light* / *lights down*, *less light* | step brightness |
-| *go faster*, *speed up* / *go slower*, *slow down* | step cloud motion |
-| *freeze clouds*, *stop clouds* | freeze the clouds |
+| *faster clouds* / *slower clouds* | step cloud motion |
+| *freeze clouds* | freeze the clouds |
 | *bigger clouds* / *smaller clouds* | step cloud size |
 | *more clouds* / *fewer clouds*, *more sky* | step Clear Sky |
 | *sound on* / *sound off* | sound drives brightness, or not |
