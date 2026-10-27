@@ -35,8 +35,9 @@ struct Status {
 namespace status_display {
 
 constexpr uint32_t kAwakeMs = 30000;
-// The screen turns off once the Dong has been lying still, with no button
-// pressed, for this long; moving it or pressing a button brings it back.
+// The screen turns off once the Dong has been lying down, with no button
+// pressed, for this long; picking it up (MotionTracker::lying()) or pressing
+// a button brings it back. A bump of the table doesn't.
 constexpr uint32_t kSleepAfterMs = 60000;
 
 bool begin();

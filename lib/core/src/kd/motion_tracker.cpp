@@ -18,6 +18,8 @@ void MotionTracker::begin(const Vec3& savedBias) {
     bias_ = savedBias;
     stillness_.reset();
     learnedThisRest_ = 0;
+    lying_ = false;
+    lyingTime_ = movingTime_ = 0;
     reference_ = {};
     zero_ = {};
     lastRate_ = {};
@@ -71,7 +73,22 @@ void MotionTracker::update(const ImuSample& sample) {
             ++biasGeneration_;
     }
 
+    updateLying(s.dt);
     updateDisplacement(s.accel, rate, s.dt);
+}
+
+void MotionTracker::updateLying(float dt) {
+    if (atRest()) {
+        if (!lying_) lyingTime_ = 0;
+        lying_ = true;
+        layAt_ = filter_->orientation();
+        movingTime_ = 0;
+    } else if (lying_) {
+        if (stillness_.stillTime() <= 0.f) movingTime_ += dt;
+        if (movingTime_ >= settings_.pickUpMoving || filter_->orientation().angleTo(layAt_) >= settings_.pickUpTurn)
+            lying_ = false;
+    }
+    if (lying_) lyingTime_ += dt;
 }
 
 void MotionTracker::updateDisplacement(const Vec3& accel, const Vec3& rate, float dt) {

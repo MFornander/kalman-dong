@@ -653,7 +653,7 @@ void loop() {
     static bool calibrating = false;
     static char banner[sizeof(Status::banner)] = "";
     static uint32_t bannerUntilMs = 0;
-    static uint32_t lastActiveMs = 0;  // a button pressed or the Dong moving; see kSleepAfterMs
+    static uint32_t lastActiveMs = 0;  // a button pressed or the Dong picked up; see kSleepAfterMs
 
     const int64_t frameStartUs = esp_timer_get_time();
     const uint32_t nowMs = millis();
@@ -811,6 +811,7 @@ void loop() {
     const float loudnessNow = loudness;
     if (micOk && soundOn) in.loudness = loudnessNow;
     bool atRest = false;
+    bool lying = false;
     kd::Quat rotZero;
     if (imuOk) {
         xSemaphoreTake(trackerLock, portMAX_DELAY);
@@ -819,6 +820,7 @@ void loop() {
         in.ignitionProgress = tracker.ignitionProgress();
         in.restSeconds = tracker.restSeconds();
         atRest = tracker.atRest();
+        lying = tracker.lying();
         bool ignited = tracker.ignited();
         unsigned biasGeneration = tracker.biasGeneration();
         kd::Vec3 bias = tracker.gyroBias();
@@ -913,7 +915,7 @@ void loop() {
     status.atRest = atRest;
     status.soundOn = soundOn;
     status.loudness = loudnessNow;
-    if (!atRest || in.calibration.active) lastActiveMs = nowMs;
+    if (!lying || in.calibration.active) lastActiveMs = nowMs;
     status.asleep = nowMs - lastActiveMs >= status_display::kSleepAfterMs;
     {
         const kd::PoseReadout r = kd::readout(in.pose, rotZero);

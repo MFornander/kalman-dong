@@ -133,6 +133,54 @@ TEST_CASE_TEMPLATE("heading drift from a changed gyro bias is re-learned at Rest
     CHECK(r.tracker.biasGeneration() >= 2u);
 }
 
+TEST_CASE_TEMPLATE("a bump of the table leaves the Dong lying down", F, FILTERS) {
+    Rig<F> r;
+    r.tracker.begin({});
+    r.imu.run(r.tracker, 3.0);
+    REQUIRE(r.tracker.lying());
+    const float before = r.tracker.restSeconds();
+    // A knock: a fifth of a second of sharp rattling, but no real turn.
+    r.imu.omega = [](double t) { return Vec3{0.6f, -0.4f, 0.3f} * float(std::sin(2 * kd::kPi * 40 * t)); };
+    r.imu.linear = [](double t) { return Vec3{0.f, 1.5f, 4.f} * float(std::sin(2 * kd::kPi * 30 * t)); };
+    r.imu.run(r.tracker, 0.2);
+    CHECK_FALSE(r.tracker.atRest());  // no longer still...
+    CHECK(r.tracker.lying());         // ...but not picked up
+    r.imu.omega = [](double) { return Vec3{}; };
+    r.imu.linear = [](double) { return Vec3{}; };
+    r.imu.run(r.tracker, 2.0);
+    CHECK(r.tracker.lying());
+    CHECK(r.tracker.restSeconds() > before + 2.f);
+}
+
+TEST_CASE_TEMPLATE("turning the Dong picks it up", F, FILTERS) {
+    Rig<F> r;
+    r.tracker.begin({});
+    r.imu.run(r.tracker, 3.0);
+    REQUIRE(r.tracker.restSeconds() > 1.f);
+    // Tip it up 30 degrees over half a second.
+    r.imu.omega = [](double) { return Vec3{0.f, -degToRad(60), 0.f}; };
+    r.imu.run(r.tracker, 0.5);
+    CHECK_FALSE(r.tracker.lying());
+    CHECK(r.tracker.restSeconds() == 0.f);
+    // Held still in the hand, it is at Rest again, counting from zero.
+    r.imu.omega = [](double) { return Vec3{}; };
+    r.imu.run(r.tracker, 2.0);
+    CHECK(r.tracker.lying());
+    CHECK(r.tracker.restSeconds() < 2.f);
+}
+
+TEST_CASE_TEMPLATE("carrying the Dong without turning it picks it up after two seconds", F, FILTERS) {
+    Rig<F> r;
+    r.tracker.begin({});
+    r.imu.run(r.tracker, 3.0);
+    // Walking with it: the Hilt sways level, a step a second.
+    r.imu.linear = [](double t) { return Vec3{1.5f, 0.5f, 0.8f} * float(std::sin(2 * kd::kPi * t)); };
+    r.imu.run(r.tracker, 1.0);
+    CHECK(r.tracker.lying());
+    r.imu.run(r.tracker, 1.5);
+    CHECK_FALSE(r.tracker.lying());
+}
+
 TEST_CASE_TEMPLATE("a slow deliberate turn is followed, not mistaken for drift", F, FILTERS) {
     Rig<F> r;
     r.tracker.begin({});

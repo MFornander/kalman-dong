@@ -94,7 +94,9 @@ LEDs stay off. It runs from the Grove port's 3.3 V as it is.
 Power on and hold the Dong still for a second. **Ignition** extends the
 Blade like a lightsaber while it learns which way is down, then it fades into
 the clouds. Re-level (hold C) points the clouds' reference heading where you
-are pointing. After a minute at Rest the Blade dims; any motion wakes it.
+are pointing. After a minute at Rest the Blade dims and the screen turns off;
+picking the Dong up wakes them. Picking up means turning it about 20° or
+carrying it for 2 s, so a bump of the table doesn't.
 
 Sound drives brightness: in the room's usual quiet the Blade glows at 15%
 (the *quiet glow*; knob 7 on an 8-Encoder unit changes it), and it brightens
@@ -329,8 +331,8 @@ of x, y and z:
 While a button is held the header shows what letting go will do instead, and
 setting changes show there briefly. The Status page (C quick) is upright in
 the same pose, with the same grid at the top. The screen turns off after 60 s
-of lying still with no button pressed, and comes back when the board moves
-or a button is pressed.
+of lying still with no button pressed, and comes back when the board is
+picked up (turned about 20° or moved for 2 s) or a button is pressed.
 
 The quickest route is the guided bring-up script: it flashes, checks rates
 and filter costs, runs Mounting Calibration and verifies it, records swings
@@ -368,9 +370,9 @@ Then open the [serial console](#serial-console) and type `?`.
    what letting go will do.
 7. **Settings survive power cycles.** Change something, wait 3 s, unplug,
    plug back in.
-8. **Rest.** Lay the board down: after 60 s the bars dim to 20%; pick it up
-   and they brighten instantly. Leave it a few minutes and watch for heading
-   drift (the clouds slowly turning).
+8. **Rest.** Lay the board down: after 60 s the bars dim to 20%; knock on
+   the table and they stay dim; pick it up and they brighten instantly. Leave
+   it a few minutes and watch for heading drift (the clouds slowly turning).
 9. **Drift data.** Record the board lying still and some waving for the
    replay tests: `uv run tools/capture_imu.py bench-still --seconds 120`.
 10. **Sound.** `l` logs the microphone: a quiet room sits at Loudness 0 and
