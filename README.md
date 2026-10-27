@@ -57,8 +57,13 @@ Quick, amber for Long) and what letting go will do.
 | B      | cloud motion: frozen, 1x, 2x | step brightness | step Girth | USR2 | USR2 |
 | C      | Status page (again to close; closes itself after 30 s) | Re-level | Mounting Calibration | USR1 | USR3 |
 
+A, B and C are wired to the carrier's USR1-USR3 buttons, and which is which
+depends on the build. On the LED builds (`xiao`, `xiao_2m`,
+`xiao_lightswarm`) C is USR3. On the bare board (`xiao_screen`) A and C swap
+so the Palette lands on USR3, the easiest button to press, and C is USR1.
 Each Dong Profile picks its button pins (`BUTTON_*_PIN` in
-[src/profiles.h](src/profiles.h)).
+[src/profiles.h](src/profiles.h)). Type `?` on the serial console to see the
+pads of the build that's running.
 
 ### Knobs
 
@@ -193,14 +198,28 @@ pio run -e xiao_screen -t upload
 pio device monitor -e xiao_screen
 ```
 
-Type `?` in the monitor for every serial command. In short: `i` status plus per-stage frame, IMU and display timings, `c`
-start Mounting Calibration, `f` switch orientation filter (Mahony / Kalman),
-`a` toggle axis check (5 Hz), `b` Cloud Field micro-benchmark, `k` log the
-8-Encoder unit's counts, pushes and switch as they change, `v` toggle the
-Blade view, `R`/`S` start/stop raw IMU streaming, `z` log a line every frame
-for 3 s (then `i` shows the worst loop, which should stay a few ms even with
-the port closed), `m` sound drives brightness or not, `l` log the
-microphone's level and Loudness 10 times a second.
+Serial commands are one key each, with no Enter needed; an unknown key
+says to type `?`. The board prints the same list, plus which pads A, B and C
+are on for the running build, when you type `?` (or `h`).
+
+| Key | Does |
+|-----|------|
+| **Status** | |
+| `?` | this help, starting with the buttons and their pads (also `h`) |
+| `i` | status: profile, IMU, filter, rates, per-stage frame and display timings, knobs |
+| `p` | raw button levels (0 = pressed) and how GPIO43 is wired |
+| **Controls** | |
+| `w` | as a quick press of C: open or close the Status page |
+| `v` | Blade view on or off |
+| `c` | start Mounting Calibration (as holding C for 5 s) |
+| `k` | log the 8-Encoder unit's counts, pushes and switch as they change (again: stop) |
+| **Motion** | |
+| `f` | next orientation filter (Mahony, Kalman) |
+| `a` | axis check, 5 times a second: which sensor axis sees gravity, where the Blade points (again: stop) |
+| `R` / `S` | start / stop streaming raw IMU samples as CSV (`tools/capture_imu.py`) |
+| **Performance** | |
+| `b` | Cloud Field micro-benchmark |
+| `z` | log a line every frame for 3 s; then `i` shows the worst loop, which should stay a few ms even with the port closed |
 
 1. **Boot and IMU.** The Blade view comes up right away (C shows the Status page). `i`
    should name the chip (LSM6DS3 / LSM6DS3TR-C / LSM6DSO) and report about
