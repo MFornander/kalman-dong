@@ -60,8 +60,11 @@ public:
 
     bool isDown() const { return stable_; }
 
-    // How long the current press has lasted; 0 when released.
-    uint32_t heldMs(uint32_t nowMs) const { return stable_ ? nowMs - pressedAtMs_ : 0; }
+    // How long the current press has lasted; 0 when released or cancelled.
+    uint32_t heldMs(uint32_t nowMs) const { return stable_ && !cancelled_ ? nowMs - pressedAtMs_ : 0; }
+
+    // The press under way (if any) does nothing, now or when let go.
+    void cancel() { cancelled_ = raw_ || stable_; }
 
 private:
     bool stable_ = false;
@@ -69,6 +72,7 @@ private:
     uint32_t rawSinceMs_ = 0;
     uint32_t pressedAtMs_ = 0;
     bool held_ = false;
+    bool cancelled_ = false;
 };
 
 enum class Setting : uint8_t { None, Palette, ClearSky, Brightness, Girth, Motion, CloudSize, QuietGlow };
@@ -127,6 +131,10 @@ public:
 
     // Puts a setting back to its default.
     ControlEvent restore(Setting s, uint32_t nowMs);
+
+    // The press of `b` under way does nothing (its job was done another way,
+    // e.g. by a spoken command while it was held to talk).
+    void cancel(Button b) { buttons_[static_cast<int>(b)].cancel(); }
 
 private:
     void changed(uint32_t nowMs);

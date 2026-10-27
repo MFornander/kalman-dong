@@ -104,6 +104,41 @@ to full with the loudest sounds it has heard lately. A steady hum (a fan, a
 crowd) fades back to quiet within about 15 s, so beats and shouts over it
 still show. Serial `m` or the knob unit's switch turns this off and on.
 
+### Voice (prototype, `xiao_screen` only)
+
+Hold **USR3** and say a two-word command; let go when you're done. The
+screen shows *Listening* while you hold it. A command heard replaces the
+button's own press; if nothing is heard, the press counts as usual (a quick
+press of A on this build still steps the Palette), just about half a second
+later, while the recognizer finishes.
+
+| Say | Does |
+|-----|------|
+| *next palette*, *next colors* / *previous palette*, *previous colors* | step the Palette |
+| *lights up*, *more light* / *lights down*, *less light* | step brightness |
+| *go faster*, *speed up* / *go slower*, *slow down* | step cloud motion |
+| *freeze clouds*, *stop clouds* | freeze the clouds |
+| *bigger clouds* / *smaller clouds* | step cloud size |
+| *more clouds* / *fewer clouds*, *more sky* | step Clear Sky |
+| *sound on* / *sound off* | sound drives brightness, or not |
+| *reset heading* | Re-level |
+| *show status* | open or close the Status page |
+
+It runs Espressif's MultiNet7 English recognizer (ESP-SR, part of the
+Arduino core) on core 0, below the IMU and mic tasks, so the IMU keeps its
+rate and the LED core its frames. Listening takes about 27 ms of every
+32 ms of audio, so the Status display redraws slowly while you hold the
+button. The model (3.3 MB) lives in its own flash partition; write it once
+per board:
+
+```bash
+pio run -e xiao_screen -t upload_voice_model
+```
+
+Serial `t` listens for 3 s as if USR3 were held, `g` steps the gain the mic
+gets before the recognizer, `V` lists every phrase, and `i` shows the
+recognizer's timing. Each attempt logs what was heard and how loud you were.
+
 ### Mounting Calibration (once per build)
 
 The Dong has to know how its IMU sits relative to the Blade. Hold **C for 5
@@ -187,6 +222,10 @@ version and which pads A, B and C are on, when you type `?` (or `h`):
 | **Sound** | |
 | `m` | sound drives brightness, or not (as the 8-Encoder unit's switch) |
 | `l` | log the mic's level and Loudness 10 times a second (again: stop) |
+| **Voice** (`xiao_screen`) | |
+| `t` | listen for 3 s, as if USR3 were held |
+| `g` | next voice gain (1x to 32x) |
+| `V` | list every spoken command |
 | **Motion** | |
 | `f` | next orientation filter (Mahony, Kalman) |
 | `a` | axis check, 5 times a second: which sensor axis sees gravity, where the Blade points (again: stop) |

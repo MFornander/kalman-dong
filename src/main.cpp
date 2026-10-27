@@ -36,6 +36,11 @@
 #include "status_display.h"
 #include "store.h"
 #include "kd/strand_map.h"
+#ifdef KD_VOICE
+#include "kd/push_to_talk.h"
+#include "kd/voice_commands.h"
+#include "voice.h"
+#endif
 
 // Set from VERSION and git by tools/pio_version.py.
 #ifndef KD_VERSION
@@ -106,6 +111,25 @@ volatile float micDb = -90.f, micQuietDb = -90.f, micLoudDb = -70.f;
 volatile float micUs = 0.f;  // smoothed time to measure one block
 bool soundOn = true;         // Loudness drives brightness; serial 'm' or the 8-Encoder unit's switch
 bool printSound = false;     // serial 'l'
+
+#ifdef KD_VOICE
+// Voice: holding USR3 listens for a spoken command; a command heard replaces
+// the button's own press (kd/push_to_talk.h, src/voice.h).
+constexpr int kTalkPin = 11;  // USR3
+static_assert(BUTTON_A_PIN == kTalkPin || BUTTON_B_PIN == kTalkPin || BUTTON_C_PIN == kTalkPin,
+              "the talk button is one of A, B, C");
+constexpr kd::Button kTalkButton = BUTTON_A_PIN == kTalkPin   ? kd::Button::A
+                                   : BUTTON_B_PIN == kTalkPin ? kd::Button::B
+                                                              : kd::Button::C;
+// Below the IMU and mic, above the display: a busy recognizer slows the
+// Status display's frames, never the IMU's samples or the LED core.
+constexpr UBaseType_t kVoicePriority = 2;
+Voice voice;
+bool voiceOk = false;
+kd::PushToTalk ptt(kTalkButton);
+const float kVoiceGains[] = {1.f, 2.f, 4.f, 8.f, 16.f, 32.f};
+uint32_t serialTalkUntilMs = 0;  // serial 't': listening as if USR3 were held
+#endif
 
 // Rendering.
 kd::StrandMap strandMap(profile);
@@ -268,6 +292,9 @@ void micTask(void*) {
         micQuietDb = loudnessMeter.quietDecibels();
         micLoudDb = loudnessMeter.loudDecibels();
         micUs = micUs + (float(esp_timer_get_time() - start) - micUs) * 0.05f;
+#ifdef KD_VOICE
+        if (voiceOk) voice.feed(block, bytes / sizeof(int16_t));
+#endif
     }
 }
 
@@ -367,6 +394,13 @@ void printHelp() {
         "#   m  sound drives brightness, or not (as the 8-Encoder unit's switch)\n"
         "#   l  log the mic's level and Loudness 10 times a second (again: stop)\n"
         "#\n"
+#ifdef KD_VOICE
+        "# Voice (hold USR3 and speak two words: next palette, lights up, go faster, bigger clouds, ...)\n"
+        "#   t  listen for 3 s, as if USR3 were held\n"
+        "#   g  next voice gain (1x to 32x; 'i' shows it)\n"
+        "#   V  list every spoken command\n"
+        "#\n"
+#endif
         "# Motion\n"
         "#   f  next orientation filter (Mahony, Kalman)\n"
         "#   a  axis check, 5 times a second: which sensor axis sees gravity, where the Blade points (again: stop)\n"
@@ -459,6 +493,30 @@ void handleSerial() {
                               (unsigned long)REG_READ(GPIO_FUNC43_OUT_SEL_CFG_REG),
                               (unsigned long)REG_READ(GPIO_ENABLE1_REG));
                 break;
+#ifdef KD_VOICE
+            case 'g': {
+                const size_t n = sizeof(kVoiceGains) / sizeof(kVoiceGains[0]);
+                size_t i = 0;
+                while (i < n && kVoiceGains[i] != voice.gain()) ++i;
+                voice.setGain(kVoiceGains[(i + 1) % n]);
+                Serial.printf("# voice gain %.0fx\n", voice.gain());
+                break;
+            }
+            case 't':
+                if (voiceOk && !ptt.talking()) {
+                    voice.listen();
+                    serialTalkUntilMs = millis() + 3000;
+                    Serial.println("# voice: listening for 3 s");
+                }
+                break;
+            case 'V': {
+                size_t n = 0;
+                const kd::VoicePhrase* phrases = kd::voicePhrases(n);
+                for (size_t i = 0; i < n; ++i)
+                    Serial.printf("# say '%s': %s\n", phrases[i].words, kd::voiceCommandName(phrases[i].command));
+                break;
+            }
+#endif
             case 'i':
                 Serial.printf("# kalman-dong %s (%s)\n", kVersion, kCommit);
                 Serial.printf("# profile=%s chip=%s filter=%s imu=%.0fHz fps=%.0f bias=%.4f,%.4f,%.4f\n",
@@ -478,6 +536,18 @@ void handleSerial() {
                 Serial.printf("# mic %s: %.1f dB (quiet %.1f, loud %.1f) loudness %.2f, %.0f us per %u samples, %s\n",
                               micOk ? "ok" : "failed", micDb, micQuietDb, micLoudDb, loudness, micUs,
                               unsigned(kMicBlock), soundOn ? "drives brightness" : "off");
+#ifdef KD_VOICE
+                if (voiceOk) {
+                    const Voice::Stats v = voice.stats();
+                    Serial.printf("# voice: %s on %s, gain %.0fx, detect %.0f us (worst %lu) per %lu samples, "
+                                  "worst backlog %lu ms, %lu blocks dropped\n",
+                                  voice.modelName(), padName(kTalkPin), v.gain, v.detectUs,
+                                  (unsigned long)v.worstDetectUs, (unsigned long)v.chunkSamples,
+                                  (unsigned long)v.worstBacklogMs, (unsigned long)v.dropped);
+                } else {
+                    Serial.printf("# voice off: %s\n", voice.error());
+                }
+#endif
                 if (knobsOk)
                     Serial.printf("# knobs: 8-Encoder unit firmware %u, read %.0f us, switch %s\n",
                                   unsigned(knobUnit.firmware()), knobReadUs, knobPanel.switchOn() ? "on" : "off");
@@ -625,6 +695,17 @@ void setup() {
         xTaskCreatePinnedToCore(micTask, "mic", 4096, nullptr, configMAX_PRIORITIES - 3, nullptr, 0);
     else
         Serial.println("Microphone failed to start; sound won't change brightness.");
+#ifdef KD_VOICE
+    if (micOk) {
+        const uint32_t t0 = millis();
+        voiceOk = voice.begin(kVoicePriority, 0);
+        if (voiceOk)
+            Serial.printf("# voice: %s loaded in %lu ms; hold %s and speak\n", voice.modelName(),
+                          (unsigned long)(millis() - t0), padName(kTalkPin));
+        else
+            Serial.printf("# voice off: %s\n", voice.error());
+    }
+#endif
 
     status.profile = profile.name;
     status.imuChip = imu.chipName();
@@ -735,8 +816,50 @@ void loop() {
     // Feed every queued button change at the time it was sampled, then the
     // current level at a time read afterwards, so time only moves forward.
     static uint8_t buttonsDown = 0;
-    kd::ButtonLog::Sample sample;
-    while (buttonLog.pop(sample)) {
+    static kd::ButtonLog::Sample sample;
+    static bool heldBack = false;  // `sample` waits for the recognizer (kd/push_to_talk.h)
+    bool waitForVoice = false;
+#ifdef KD_VOICE
+    // Spoken commands first, so one heard before the talk button's release
+    // cancels its press before the release reaches Controls.
+    static bool heardThisPress = false;
+    Voice::Result heard;
+    while (voiceOk && voice.poll(heard)) {
+        if (heard.kind == Voice::Result::Kind::Heard) {
+            Serial.printf("# voice: heard '%s' (%s, p %.2f) %lu ms after pressing\n", heard.words,
+                          kd::voiceCommandName(heard.command), heard.probability, (unsigned long)heard.afterMs);
+            if (ptt.talking()) controls.cancel(ptt.talk());
+            heardThisPress = true;
+            onControl(kd::applyVoice(heard.command, controls, nowMs));
+        } else {
+            ptt.finished();
+            Serial.printf("# voice: done %lu ms after letting go, peak %.0f dBFS%s\n", (unsigned long)heard.afterMs,
+                          heard.peakDb, heardThisPress ? "" : ", nothing heard");
+        }
+    }
+    if (serialTalkUntilMs && static_cast<int32_t>(nowMs - serialTalkUntilMs) >= 0) {
+        serialTalkUntilMs = 0;
+        voice.finish();
+    }
+#endif
+    while (heldBack || buttonLog.pop(sample)) {
+        heldBack = true;
+#ifdef KD_VOICE
+        if (voiceOk) {
+            const kd::PushToTalk::Admit a = ptt.admit(sample.down, nowMs);
+            if (a.ask == kd::PushToTalk::Ask::Listen) {
+                heardThisPress = false;
+                voice.listen();
+            } else if (a.ask == kd::PushToTalk::Ask::Finish) {
+                voice.finish();
+            }
+            if (!a.now) {
+                waitForVoice = true;
+                break;
+            }
+        }
+#endif
+        heldBack = false;
         for (int i = 0; i < 3; ++i)
             if (((sample.down ^ buttonsDown) >> i) & 1)
                 Serial.printf("# button %c %s at %lu ms\n", "ABC"[i], (sample.down >> i) & 1 ? "down" : "up",
@@ -747,8 +870,9 @@ void loop() {
     }
     if (buttonsDown) lastActiveMs = nowMs;
     const uint32_t buttonsMs = millis();
-    for (const kd::ControlEvent& e : controls.update(buttonsDown & 1, buttonsDown & 2, buttonsDown & 4, buttonsMs))
-        onControl(e);
+    if (!waitForVoice)  // time stands still for Controls while a release is held back
+        for (const kd::ControlEvent& e : controls.update(buttonsDown & 1, buttonsDown & 2, buttonsDown & 4, buttonsMs))
+            onControl(e);
     kd::KnobReading knobs;
     while (xQueueReceive(knobQueue, &knobs, 0) == pdTRUE) {
         static kd::KnobReading shown;
@@ -788,9 +912,21 @@ void loop() {
                         : onRelease == kd::ButtonTracker::Press::Long ? 1
                                                                       : 2;
         snprintf(banner, sizeof(banner), "%s", kOnRelease[pressRow][col]);
+#ifdef KD_VOICE
+        if (voiceOk && pressRow == static_cast<int>(kTalkButton) && pressNow.button >= 0) {
+            const char* action = strchr(kOnRelease[pressRow][col], '\n');  // "palette" in "Release:\npalette"
+            snprintf(banner, sizeof(banner), "Listening\nor %s", action ? action + 1 : "nothing");
+        }
+#endif
         bannerUntilMs = nowMs + 300;
         if (!status_display::bladeView()) wakeDisplay = true;  // the Status page shows the bar
     }
+#ifdef KD_VOICE
+    else if (voiceOk && ptt.talking() && !heardThisPress) {
+        snprintf(banner, sizeof(banner), "Listening");
+        bannerUntilMs = nowMs + 300;
+    }
+#endif
     if (controls.shouldSave(buttonsMs)) {
         store::saveSettings(settings);
         controls.markSaved();
