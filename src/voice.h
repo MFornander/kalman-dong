@@ -30,9 +30,15 @@ public:
     // Mic task: every block, listening or not (cheap when not).
     void feed(const int16_t* samples, size_t count);
 
-    // Main loop: the talk button went down / up.
+    // Main loop: the talk button went down / up / was only tapped.
     void listen();
     void finish();
+    void cancel();
+
+    // Silence fed after letting go, so the recognizer can close the last
+    // word; it stops early once a command is heard. Serial 'u' steps it.
+    void setFlushMs(uint32_t ms) { flushMs_ = ms; }
+    uint32_t flushMs() const { return flushMs_; }
 
     struct Result {
         enum class Kind : uint8_t { Heard, Finished } kind = Kind::Finished;
@@ -41,6 +47,7 @@ public:
         float probability = 0.f;
         uint32_t afterMs = 0;    // since listen(); for Finished: how long finishing took after finish()
         float peakDb = -90.f;    // Finished: loudest sample while listening (dB below full scale)
+        uint32_t flushedMs = 0;  // Finished: silence fed before it was done
     };
     // Main loop: the next result, if any. Only results for the latest listen().
     bool poll(Result& out);
@@ -64,7 +71,7 @@ public:
 private:
     static void taskEntry(void* self) { static_cast<Voice*>(self)->run(); }
     void run();
-    void detect(int16_t* chunk);
+    bool detect(int16_t* chunk);  // true: a command was heard
     void post(const Result& r);
 
     const char* error_ = "not started";
@@ -76,6 +83,8 @@ private:
     std::atomic<uint32_t> generation_{0};  // bumped by listen()
     std::atomic<bool> accepting_{false};   // feed() passes audio on
     std::atomic<bool> finishing_{false};
+    std::atomic<bool> cancelled_{false};
+    uint32_t flushMs_ = 600;
     uint32_t taskGeneration_ = 0;
     uint32_t listenMs_ = 0, finishMs_ = 0;
 

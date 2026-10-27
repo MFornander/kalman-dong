@@ -107,6 +107,7 @@ struct Bench {
     uint32_t now = 1000;
     bool listening = false;
     int listens = 0;
+    int cancels = 0;
     uint32_t finishAtMs = 0;
     bool finishing = false;
     uint32_t recognizeMs = 150;
@@ -135,10 +136,14 @@ struct Bench {
         }
         while (!log.empty()) {
             const auto [down, ms] = log.front();
-            const PushToTalk::Admit a = ptt.admit(down, now);
+            const PushToTalk::Admit a = ptt.admit(down, ms, now);
             if (a.ask == PushToTalk::Ask::Listen) {
                 listening = true;
                 ++listens;
+            }
+            if (a.ask == PushToTalk::Ask::Cancel) {
+                listening = false;
+                ++cancels;
             }
             if (a.ask == PushToTalk::Ask::Finish) {
                 finishing = true;
@@ -156,9 +161,9 @@ struct Bench {
 
 }  // namespace
 
-TEST_CASE("holding the talk button listens, and a tap with nothing said is still a tap") {
+TEST_CASE("holding the talk button listens, and a press with nothing said still counts") {
     Bench b;
-    b.run(200, true);
+    b.run(600, true);
     CHECK(b.listens == 1);
     CHECK(b.ptt.talking());
     b.run(100, false);  // the release waits for the recognizer...
@@ -168,6 +173,16 @@ TEST_CASE("holding the talk button listens, and a tap with nothing said is still
     CHECK_FALSE(b.ptt.talking());
     CHECK(b.settings.palette == 1);
     CHECK(b.settings.cloudSize == Settings{}.cloudSize);
+}
+
+TEST_CASE("a tap too short to say anything skips the recognizer") {
+    Bench b;
+    b.run(200, true);
+    CHECK(b.listens == 1);
+    b.run(30, false);  // past the debounce: acted on at once, no wait
+    CHECK(b.cancels == 1);
+    CHECK_FALSE(b.ptt.talking());
+    CHECK(b.settings.palette == 1);
 }
 
 TEST_CASE("waiting for the recognizer doesn't turn a quick press into a long one") {
@@ -205,7 +220,7 @@ TEST_CASE("a command heard just after letting go still replaces the press") {
 TEST_CASE("a recognizer that never finishes holds the release back at most a second") {
     Bench b;
     b.recognizeMs = 100000;
-    b.run(200, true);
+    b.run(600, true);
     b.run(PushToTalk::kMaxWaitMs - 100, false);
     CHECK(b.settings.palette == 0);
     b.run(200, false);
@@ -219,7 +234,8 @@ TEST_CASE("other buttons pass straight through") {
     PushToTalk ptt{Button::A};
     uint32_t now = 1000;
     for (int i = 0; i < 20; ++i) {
-        const PushToTalk::Admit a = ptt.admit(0b010, now += 5);
+        now += 5;
+        const PushToTalk::Admit a = ptt.admit(0b010, now, now);
         CHECK(a.now);
         CHECK(a.ask == PushToTalk::Ask::None);
     }

@@ -398,6 +398,7 @@ void printHelp() {
         "# Voice (hold USR3 and speak two words: next palette, lights up, go faster, bigger clouds, ...)\n"
         "#   t  listen for 3 s, as if USR3 were held\n"
         "#   g  next voice gain (1x to 32x; 'i' shows it)\n"
+        "#   u  next silence wait after letting go (600, 450, 300, 200 ms)\n"
         "#   V  list every spoken command\n"
         "#\n"
 #endif
@@ -509,6 +510,14 @@ void handleSerial() {
                     Serial.println("# voice: listening for 3 s");
                 }
                 break;
+            case 'u': {
+                static const uint32_t kFlushes[] = {600, 450, 300, 200};
+                size_t i = 0;
+                while (i < 4 && kFlushes[i] != voice.flushMs()) ++i;
+                voice.setFlushMs(kFlushes[(i + 1) % 4]);
+                Serial.printf("# voice: up to %lu ms of silence after letting go\n", (unsigned long)voice.flushMs());
+                break;
+            }
             case 'V': {
                 size_t n = 0;
                 const kd::VoicePhrase* phrases = kd::voicePhrases(n);
@@ -833,8 +842,9 @@ void loop() {
             onControl(kd::applyVoice(heard.command, controls, nowMs));
         } else {
             ptt.finished();
-            Serial.printf("# voice: done %lu ms after letting go, peak %.0f dBFS%s\n", (unsigned long)heard.afterMs,
-                          heard.peakDb, heardThisPress ? "" : ", nothing heard");
+            Serial.printf("# voice: done %lu ms after letting go (%lu ms of silence fed, up to %lu), peak %.0f dBFS%s\n",
+                          (unsigned long)heard.afterMs, (unsigned long)heard.flushedMs,
+                          (unsigned long)voice.flushMs(), heard.peakDb, heardThisPress ? "" : ", nothing heard");
         }
     }
     if (serialTalkUntilMs && static_cast<int32_t>(nowMs - serialTalkUntilMs) >= 0) {
@@ -846,12 +856,14 @@ void loop() {
         heldBack = true;
 #ifdef KD_VOICE
         if (voiceOk) {
-            const kd::PushToTalk::Admit a = ptt.admit(sample.down, nowMs);
+            const kd::PushToTalk::Admit a = ptt.admit(sample.down, sample.ms, nowMs);
             if (a.ask == kd::PushToTalk::Ask::Listen) {
                 heardThisPress = false;
                 voice.listen();
             } else if (a.ask == kd::PushToTalk::Ask::Finish) {
                 voice.finish();
+            } else if (a.ask == kd::PushToTalk::Ask::Cancel) {
+                voice.cancel();
             }
             if (!a.now) {
                 waitForVoice = true;

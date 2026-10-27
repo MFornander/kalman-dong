@@ -17,7 +17,6 @@ namespace {
 
 constexpr uint32_t kRate = 16000;
 constexpr uint32_t kBufferMs = 3000;   // audio the voice task may fall behind by
-constexpr uint32_t kFlushMs = 600;     // silence fed after letting go, so the last word ends
 constexpr int kMultinetTimeoutMs = 6000;
 constexpr int kMaxResults = 8;
 
@@ -121,9 +120,19 @@ void Voice::listen() {
     if (!task_) return;
     listenMs_ = millis();
     finishing_ = false;
+    cancelled_ = false;
     generation_.fetch_add(1);
     peak_ = 0;
     accepting_ = true;
+    xTaskNotifyGive(task_);
+}
+
+void Voice::cancel() {
+    if (!task_) return;
+    accepting_ = false;
+    finishing_ = false;
+    cancelled_ = true;
+    generation_.fetch_add(1);  // anything still coming from this press is dropped
     xTaskNotifyGive(task_);
 }
 
@@ -157,7 +166,7 @@ Voice::Stats Voice::stats() const {
     return s;
 }
 
-void Voice::detect(int16_t* chunk) {
+bool Voice::detect(int16_t* chunk) {
     const int64_t t0 = esp_timer_get_time();
     const esp_mn_state_t state = multinet->detect(model, chunk);
     const uint32_t us = static_cast<uint32_t>(esp_timer_get_time() - t0);
@@ -180,9 +189,10 @@ void Voice::detect(int16_t* chunk) {
             }
         }
         multinet->clean(model);  // listen for another
-    } else if (state == ESP_MN_STATE_TIMEOUT) {
-        multinet->clean(model);
+        return true;
     }
+    if (state == ESP_MN_STATE_TIMEOUT) multinet->clean(model);
+    return false;
 }
 
 void Voice::run() {
@@ -195,8 +205,9 @@ void Voice::run() {
         if (gen != taskGeneration_) {  // a new press: start clean
             taskGeneration_ = gen;
             multinet->clean(model);
+            xStreamBufferReset(stream_);  // the mic never blocks on it, so this is safe
             filled = 0;
-            active = true;
+            active = !cancelled_;
         }
         if (!active) {
             ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
@@ -216,10 +227,12 @@ void Voice::run() {
         // Let go and everything said has been heard: a little silence lets
         // the recognizer close the last word.
         memset(reinterpret_cast<uint8_t*>(chunk) + filled, 0, chunkBytes - filled);
-        for (uint32_t flushed = 0; flushed < kFlushMs * kRate / 1000; flushed += chunkSamples) {
+        uint32_t flushed = 0;
+        for (; flushed < flushMs_ * kRate / 1000; flushed += chunkSamples) {
             if (generation_.load() != taskGeneration_) break;
-            detect(chunk);
+            const bool heard = detect(chunk);
             memset(chunk, 0, chunkBytes);
+            if (heard) break;  // the last word is closed
         }
         filled = 0;
         active = false;
@@ -227,6 +240,7 @@ void Voice::run() {
         Result done;
         done.kind = Result::Kind::Finished;
         done.afterMs = millis() - finishMs_;
+        done.flushedMs = flushed * 1000 / kRate;
         const int32_t peak = peak_.load();
         done.peakDb = peak > 0 ? 20.f * std::log10(peak / 32768.f) : -90.f;
         post(done);

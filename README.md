@@ -109,8 +109,11 @@ still show. Serial `m` or the knob unit's switch turns this off and on.
 Hold **USR3** and say a two-word command; let go when you're done. The
 screen shows *Listening* while you hold it. A command heard replaces the
 button's own press; if nothing is heard, the press counts as usual (a quick
-press of A on this build still steps the Palette), just about half a second
-later, while the recognizer finishes.
+press of A on this build still steps the Palette). A tap under 0.4 s skips
+the recognizer and acts at once. After a longer press the recognizer needs
+about half a second of silence to close the last word, so results come
+0.6-0.9 s after letting go; pausing a beat before letting go lets it finish
+while you still hold the button.
 
 | Say | Does |
 |-----|------|
@@ -136,8 +139,10 @@ pio run -e xiao_screen -t upload_voice_model
 ```
 
 Serial `t` listens for 3 s as if USR3 were held, `g` steps the gain the mic
-gets before the recognizer, `V` lists every phrase, and `i` shows the
-recognizer's timing. Each attempt logs what was heard and how loud you were.
+gets before the recognizer, `u` steps that closing silence (600 ms; 450,
+300 and 200 to experiment), `V` lists every phrase, and `i` shows the
+recognizer's timing. Each attempt logs what was heard, how much silence it
+took and how loud you were.
 
 ### Mounting Calibration (once per build)
 
@@ -225,6 +230,7 @@ version and which pads A, B and C are on, when you type `?` (or `h`):
 | **Voice** (`xiao_screen`) | |
 | `t` | listen for 3 s, as if USR3 were held |
 | `g` | next voice gain (1x to 32x) |
+| `u` | next silence wait after letting go (600, 450, 300, 200 ms) |
 | `V` | list every spoken command |
 | **Motion** | |
 | `f` | next orientation filter (Mahony, Kalman) |
