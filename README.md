@@ -171,13 +171,16 @@ version and which pads A, B and C are on, when you type `?` (or `h`):
 |-----|------|
 | **Status** | |
 | `?` | this help, starting with the buttons and their pads (also `h`) |
-| `i` | status: profile, IMU, filter, rates, per-stage frame and display timings, knobs |
+| `i` | status: profile, IMU, filter, rates, per-stage frame and display timings, mic, knobs |
 | `p` | raw button levels (0 = pressed) and how GPIO43 is wired |
 | **Controls** | |
 | `w` | as a quick press of C: open or close the Status page |
 | `v` | Blade view on or off |
 | `c` | start Mounting Calibration (as holding C for 5 s) |
 | `k` | log the 8-Encoder unit's counts, pushes and switch as they change (again: stop) |
+| **Sound** | |
+| `m` | sound drives brightness, or not |
+| `l` | log the mic's level and Loudness 10 times a second (again: stop) |
 | **Motion** | |
 | `f` | next orientation filter (Mahony, Kalman) |
 | `a` | axis check, 5 times a second: which sensor axis sees gravity, where the Blade points (again: stop) |
