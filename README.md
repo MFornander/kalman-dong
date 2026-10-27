@@ -144,6 +144,24 @@ All logic lives in [lib/core](lib/core/src/kd) as plain C++17 and is tested on
 the PC; [src/](src) is thin hardware glue. In the serial monitor, `i` prints
 status.
 
+### Versioning
+
+The firmware's version is in [VERSION](VERSION), as major.minor. **Every pull
+request raises it**, usually the minor number (0.1 to 0.2); the GitHub check
+*Version* fails a PR whose VERSION isn't above the base branch's. Two PRs open
+at once both start from the same number, so whichever merges second raises
+it again when it is rebased.
+
+The build compiles in the version and the git commit (`git describe`, with
+`-dirty` for uncommitted changes) through
+[tools/pio_version.py](tools/pio_version.py). The serial console shows them
+at boot, at the top of `?` and `i`, and IMU recordings carry `fw=` in their
+header:
+
+```
+# kalman-dong 0.1 (28604ac) ready; ? for help
+```
+
 ### Recording swings
 
 With the Dong plugged in over USB:

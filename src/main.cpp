@@ -37,7 +37,18 @@
 #include "store.h"
 #include "kd/strand_map.h"
 
+// Set from VERSION and git by tools/pio_version.py.
+#ifndef KD_VERSION
+#define KD_VERSION "dev"
+#endif
+#ifndef KD_COMMIT
+#define KD_COMMIT "unknown"
+#endif
+
 namespace {
+
+constexpr const char* kVersion = KD_VERSION;
+constexpr const char* kCommit = KD_COMMIT;
 
 // Carrier board pins (Seeed schematic / arduino-esp32 XIAO_ESP32S3_Plus variant).
 constexpr int kImuSda = 5;
@@ -327,7 +338,7 @@ const char* padName(int pin) {
 // Serial '?': the buttons, then every command grouped by what it's for.
 void printHelp() {
     Serial.printf(
-        "# kalman-dong (profile %s)\n"
+        "# kalman-dong %s (%s), profile %s\n"
         "#\n"
         "# Buttons on this build: A = %s, B = %s, C = %s (each Dong Profile picks them)\n"
         "#   Quick: let go before 2 s; Long: let go at 2-5 s; Held: reaches 5 s\n"
@@ -337,7 +348,7 @@ void printHelp() {
         "#   C    Status page    Re-level     Mounting Calibration\n"
         "#   An 8-Encoder unit's knob 8 pushes like C (README, Knobs).\n"
         "#\n",
-        profile.name, padName(kButtonA), padName(kButtonB), padName(kButtonC));
+        kVersion, kCommit, profile.name, padName(kButtonA), padName(kButtonB), padName(kButtonC));
     Serial.print(
         "# Serial commands (one key each, no Enter needed)\n"
         "#\n"
@@ -373,8 +384,8 @@ void handleSerial() {
                 break;
             case 'R':
                 xQueueReset(recordQueue);
-                Serial.printf("# kalman-dong imu v1 profile=%s chip=%s rate=%.0f frame=sensor\n", profile.name,
-                              imu.chipName(), ImuLsm6::kRateHz);
+                Serial.printf("# kalman-dong imu v1 fw=%s profile=%s chip=%s rate=%.0f frame=sensor\n", kVersion,
+                              profile.name, imu.chipName(), ImuLsm6::kRateHz);
                 Serial.println("t_us,gx,gy,gz,ax,ay,az");
                 recording = true;
                 break;
@@ -445,6 +456,7 @@ void handleSerial() {
                               (unsigned long)REG_READ(GPIO_ENABLE1_REG));
                 break;
             case 'i':
+                Serial.printf("# kalman-dong %s (%s)\n", kVersion, kCommit);
                 Serial.printf("# profile=%s chip=%s filter=%s imu=%.0fHz fps=%.0f bias=%.4f,%.4f,%.4f\n",
                               profile.name, imu.chipName(), tracker.filter().name(), imuHz, status.fps,
                               tracker.gyroBias().x, tracker.gyroBias().y, tracker.gyroBias().z);
@@ -620,7 +632,7 @@ void setup() {
     wakeDisplay = false;  // go straight to the Blade view so Ignition is visible
 #endif
     xTaskCreatePinnedToCore(displayTask, "display", 6144, nullptr, 1, nullptr, 0);
-    Serial.println("# kalman-dong ready; ? for help");
+    Serial.printf("# kalman-dong %s (%s) ready; ? for help\n", kVersion, kCommit);
 }
 
 void loop() {
