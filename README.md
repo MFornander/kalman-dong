@@ -157,9 +157,10 @@ board shows up as `/dev/ttyACM0` on Linux (`/dev/cu.usbmodem*` on a Mac,
 - **One key per command, no Enter.** The monitor sends each key as you type
   it and doesn't echo it.
 - **Ctrl+C quits.**
-- **Quit before flashing or running a tool.** Only one program can hold the
-  port, so `pio run -t upload`, `tools/capture_imu.py` and `tools/bringup.py`
-  fail while the monitor is open.
+- **Quit before flashing or running a tool.** `pio run -t upload`,
+  `tools/capture_imu.py` and `tools/bringup.py` need the port to themselves:
+  with the monitor open, flashing fails or the monitor swallows what the tool
+  was waiting for.
 - **Start it again after a reset or replug.** The board's USB port goes away
   while it restarts, and the monitor doesn't reconnect by itself.
 
@@ -184,7 +185,6 @@ version and which pads A, B and C are on, when you type `?` (or `h`):
 | **Performance** | |
 | `b` | Cloud Field micro-benchmark |
 | `z` | log a line every frame for 3 s; then `i` shows the worst loop, which should stay a few ms even with the port closed |
-
 
 ### Versioning
 
