@@ -314,10 +314,32 @@ void applyMounting(const kd::Quat& next) {
     tracker.begin(mounting.rotate(sensorBias));
 }
 
-// Serial '?': every command, grouped by what it's for.
+// The carrier's name for a button's pin, as printed by the button.
+const char* padName(int pin) {
+    switch (pin) {
+        case 43: return "USR1";
+        case 44: return "USR2";
+        case 11: return "USR3";
+        default: return "?";
+    }
+}
+
+// Serial '?': the buttons, then every command grouped by what it's for.
 void printHelp() {
+    Serial.printf(
+        "# kalman-dong (profile %s)\n"
+        "#\n"
+        "# Buttons on this build: A = %s, B = %s, C = %s (each Dong Profile picks them)\n"
+        "#   Quick: let go before 2 s; Long: let go at 2-5 s; Held: reaches 5 s\n"
+        "#        Quick          Long         Held\n"
+        "#   A    next Palette   cloud size   step Clear Sky\n"
+        "#   B    cloud motion   brightness   step Girth\n"
+        "#   C    Status page    Re-level     Mounting Calibration\n"
+        "#   An 8-Encoder unit's knob 8 pushes like C (README, Knobs).\n"
+        "#\n",
+        profile.name, padName(kButtonA), padName(kButtonB), padName(kButtonC));
     Serial.print(
-        "# kalman-dong serial commands (one key each, no Enter needed)\n"
+        "# Serial commands (one key each, no Enter needed)\n"
         "#\n"
         "# Status\n"
         "#   ?  this help (also h)\n"
@@ -325,7 +347,7 @@ void printHelp() {
         "#   p  raw button levels (0 = pressed) and how GPIO43 is wired\n"
         "#\n"
         "# Controls\n"
-        "#   w  as if C were pressed: open or close the Status page\n"
+        "#   w  as a quick press of C: open or close the Status page\n"
         "#   v  Blade view on or off\n"
         "#   c  start Mounting Calibration (as holding C for 5 s)\n"
         "#   k  log the 8-Encoder unit's counts, pushes and switch as they change (again: stop)\n"
