@@ -1,4 +1,5 @@
-// The wielder's settings and the three buttons that change them.
+// The wielder's settings and the three buttons that change them. The knobs of
+// an 8-Encoder unit change them too (kd/knob_panel.h).
 //
 // Every button has three presses: Quick (let go before 2 s), Long (let go
 // between 2 and 5 s) and Held (reaches 5 s; acts then, and letting go
@@ -76,11 +77,15 @@ struct ControlEvent {
     Setting changed = Setting::None;
 };
 
-// What one update did: at most one event per button.
+// What one update did: at most one event per button or knob.
 struct ControlEvents {
-    ControlEvent events[3];
+    static constexpr int kMax = 8;
+    ControlEvent events[kMax];
     int count = 0;
 
+    void add(const ControlEvent& e) {
+        if (e.kind != ControlEvent::Kind::None && count < kMax) events[count++] = e;
+    }
     const ControlEvent* begin() const { return events; }
     const ControlEvent* end() const { return events + count; }
 };
@@ -110,8 +115,19 @@ public:
     PressInProgress pressInProgress(uint32_t nowMs) const;
     void markSaved() { dirty_ = false; }
 
+    // What a press of button A, B or C does, wherever the press came from.
+    ControlEvent press(Button b, ButtonTracker::Press p, uint32_t nowMs);
+
+    // Moves a setting `steps` along its table, stopping at the ends (the
+    // Palette wraps around instead). Reports the setting even when it is
+    // already at the end, so the wielder sees why nothing changed.
+    ControlEvent turn(Setting s, int steps, uint32_t nowMs);
+
+    // Puts a setting back to its default.
+    ControlEvent restore(Setting s, uint32_t nowMs);
+
 private:
-    ControlEvent apply(Button b, ButtonTracker::Press p, uint32_t nowMs);
+    void changed(uint32_t nowMs);
 
     Settings& settings_;
     ButtonTracker buttons_[3];

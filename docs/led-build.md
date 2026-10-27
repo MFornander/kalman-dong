@@ -101,6 +101,10 @@ Small I²C sensors can share it:
   board has no free analog pin for it.
 - **Ambient light sensor** (e.g. VEML7700): dim the Blade automatically in
   the dark, saving battery.
+- **Knobs**: an M5Stack 8-Encoder unit (address 0x41) gives every setting its
+  own knob; the firmware already supports it (README, *Knobs*). Plug it
+  straight in. It wants 5 V but runs from Grove's 3.3 V: its regulator only
+  feeds a 3.3 V rail, and with its LEDs off it draws about 20 mA.
 
 Each needs firmware work: the IMU keeps the bus about half busy, so other
 devices must be read from the IMU task between its samples. Their I²C

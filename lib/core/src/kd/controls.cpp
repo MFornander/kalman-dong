@@ -17,6 +17,21 @@ constexpr unsigned count(const T (&)[N]) { return N; }
 
 uint8_t next(uint8_t v, unsigned n) { return static_cast<uint8_t>((v + 1) % n); }
 
+// The field holding a setting, and how many steps its table has.
+uint8_t* field(Settings& s, Setting which, unsigned& steps) {
+    switch (which) {
+        case Setting::Palette: steps = static_cast<unsigned>(paletteCount()); return &s.palette;
+        case Setting::ClearSky: steps = count(kClearSkySteps); return &s.clearSky;
+        case Setting::Brightness: steps = count(kBrightnessSteps); return &s.brightness;
+        case Setting::Girth: steps = count(kGirthSteps); return &s.girth;
+        case Setting::Motion: steps = count(kMotionSteps); return &s.motion;
+        case Setting::CloudSize: steps = count(kCloudSizeSteps); return &s.cloudSize;
+        case Setting::None: break;
+    }
+    steps = 0;
+    return nullptr;
+}
+
 }  // namespace
 
 float Settings::brightnessValue() const { return kBrightnessSteps[brightness % count(kBrightnessSteps)]; }
@@ -73,8 +88,7 @@ ControlEvents Controls::update(bool aDown, bool bDown, bool cDown, uint32_t nowM
     for (int i = 0; i < 3; ++i) {
         const ButtonTracker::Press p = buttons_[i].update(down[i], nowMs);
         if (p == ButtonTracker::Press::None) continue;
-        const ControlEvent e = apply(static_cast<Button>(i), p, nowMs);
-        if (e.kind != ControlEvent::Kind::None) result.events[result.count++] = e;
+        result.add(press(static_cast<Button>(i), p, nowMs));
     }
     return result;
 }
@@ -94,7 +108,42 @@ Controls::PressInProgress Controls::pressInProgress(uint32_t nowMs) const {
     return p;
 }
 
-ControlEvent Controls::apply(Button b, ButtonTracker::Press p, uint32_t nowMs) {
+void Controls::changed(uint32_t nowMs) {
+    dirty_ = true;
+    lastChangeMs_ = nowMs;
+}
+
+ControlEvent Controls::turn(Setting s, int steps, uint32_t nowMs) {
+    unsigned n = 0;
+    uint8_t* v = field(settings_, s, n);
+    if (!v || steps == 0) return {};
+    int to = *v + steps;
+    if (s == Setting::Palette)
+        to = ((to % int(n)) + int(n)) % int(n);
+    else
+        to = to < 0 ? 0 : (to >= int(n) ? int(n) - 1 : to);
+    if (to != *v) {
+        *v = static_cast<uint8_t>(to);
+        changed(nowMs);
+    }
+    return {ControlEvent::Kind::Changed, s};
+}
+
+ControlEvent Controls::restore(Setting s, uint32_t nowMs) {
+    unsigned n = 0;
+    uint8_t* v = field(settings_, s, n);
+    if (!v) return {};
+    Settings defaults;
+    const uint8_t to = *field(defaults, s, n);
+    if (to != *v) {
+        *v = to;
+        changed(nowMs);
+    }
+    return {ControlEvent::Kind::Changed, s};
+}
+
+ControlEvent Controls::press(Button b, ButtonTracker::Press p, uint32_t nowMs) {
+    if (p == ButtonTracker::Press::None) return {};
     if (p == ButtonTracker::Press::Held) {
         if (b == Button::C) return {ControlEvent::Kind::CalibrateMounting, Setting::None};
     }
@@ -128,8 +177,7 @@ ControlEvent Controls::apply(Button b, ButtonTracker::Press p, uint32_t nowMs) {
         case Button::C:
             return {isLong ? ControlEvent::Kind::Relevel : ControlEvent::Kind::WakeDisplay, Setting::None};
     }
-    dirty_ = true;
-    lastChangeMs_ = nowMs;
+    changed(nowMs);
     return e;
 }
 

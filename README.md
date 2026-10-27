@@ -25,6 +25,8 @@ defined in [CONTEXT.md](CONTEXT.md); key decisions are in [docs/adr/](docs/adr/)
 - The prototype runs from a two-port USB power bank: one port to the board's
   USB-C, one to the Pixels' 5 V at the Hilt. Three external buttons wire to
   the U1-U3 pads.
+- Optional: an **M5Stack 8-Encoder unit** (U153) on the Grove port gives every
+  setting its own knob (see [Knobs](#knobs)).
 
 Wiring, power, buttons and first light:
 [docs/led-build.md](docs/led-build.md), with the
@@ -57,6 +59,29 @@ Quick, amber for Long) and what letting go will do.
 
 Each Dong Profile picks its button pins (`BUTTON_*_PIN` in
 [src/profiles.h](src/profiles.h)).
+
+### Knobs
+
+With an [M5Stack 8-Encoder unit](https://shop.m5stack.com/products/8-encoder-unit-stm32f030)
+plugged into the Grove port (before power-on), each setting has its own knob,
+counted 1-8 as printed on the unit. One click of a knob moves its setting one
+step; settings stop at their ends, and the Palette wraps around. The buttons
+keep working alongside.
+
+| Knob | Turn         | Push: Quick | Long (2 s)      | Held (5 s)           |
+|------|--------------|-------------|-----------------|----------------------|
+| 1    | Palette      | Status page | back to default |                      |
+| 2    | brightness   | Status page | back to default |                      |
+| 3    | Clear Sky    | Status page | back to default |                      |
+| 4    | cloud size   | Status page | back to default |                      |
+| 5    | cloud motion | Status page | back to default |                      |
+| 6    | Girth        | Status page | back to default |                      |
+| 7    | spare        |             |                 |                      |
+| 8    | spare        | Status page | Re-level        | Mounting Calibration |
+
+Knob 8's push works like button C. A quick push never changes a setting, so
+bumping a knob while turning it is harmless. The toggle switch and the
+unit's LEDs are unused. It runs from the Grove port's 3.3 V as it is.
 
 Power on and hold the Dong still for a second. **Ignition** extends the
 Blade like a lightsaber while it learns which way is down, then it fades into
@@ -170,7 +195,8 @@ pio device monitor -e xiao_screen
 
 Serial commands: `i` status plus per-stage frame, IMU and display timings, `c`
 start Mounting Calibration, `f` switch orientation filter (Mahony / Kalman),
-`a` toggle axis check (5 Hz), `b` Cloud Field micro-benchmark, `v` toggle the
+`a` toggle axis check (5 Hz), `b` Cloud Field micro-benchmark, `k` log the
+8-Encoder unit's counts, pushes and switch as they change, `v` toggle the
 Blade view, `R`/`S` start/stop raw IMU streaming, `z` log a line every frame
 for 3 s (then `i` shows the worst loop, which should stay a few ms even with
 the port closed), `m` sound drives brightness or not, `l` log the
