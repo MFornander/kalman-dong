@@ -7,7 +7,7 @@
 // on that core slows down; the LED core never notices.
 //
 // The model (3.3 MB) lives in its own "model" partition, written once with
-// `pio run -e xiao_screen -t upload_voice_model` (README, Voice).
+// `pio run -e xiao_screen -t upload_voice_model` (README, Voice commands).
 #pragma once
 
 #include <Arduino.h>

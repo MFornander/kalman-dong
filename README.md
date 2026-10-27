@@ -13,6 +13,166 @@ are slicing through slowly drifting rainbow clouds hanging in the air around
 you. The vocabulary (Dong, Blade, Line, Cloud Field, Girth, Push, ...) is
 defined in [CONTEXT.md](CONTEXT.md); key decisions are in [docs/adr/](docs/adr/).
 
+## Features
+
+- **Rainbow clouds that stay put in the air.** The Blade shows only the
+  slice of a slowly drifting 3D Cloud Field it passes through, anchored by
+  the Dong's orientation; twisting it rolls color around the Blade (Girth).
+- **Motion tracking at about 817 Hz** with a Mahony filter (Kalman to
+  compare): a lightsaber-style Ignition while it learns which way is down,
+  Re-level, Travel and Push for moves without turning, and drift re-learned
+  whenever it lies still.
+- **Sound drives brightness** from the onboard mic: the Blade glows at a
+  set *quiet glow* in silence and brightens with beats and shouts.
+- **Voice commands** (prototype): hold USR3 and say two words, like
+  *next palette* or *faster clouds*.
+- **Three buttons** with quick, long and held presses, and an optional
+  **8-Encoder knob unit** that gives every setting its own knob.
+- **Sleeps when set down:** after a minute lying still the Blade dims and
+  the screen turns off; picking it up wakes it, a bump of the table doesn't.
+- **Bench mode:** the `xiao_screen` build draws the Blade on the board's
+  1.14" display, with a live position and rotation readout.
+- **Power Budget:** brightness is scaled to stay within what the battery
+  pack can deliver.
+- **A serial console** with one-key commands and a `?` help page; settings
+  survive power cycles.
+- **Tested on the PC:** all logic is plain C++ with host tests, including
+  replays of real IMU recordings.
+
+### Build one
+
+**[LED build guide (docs/led-build.md)](docs/led-build.md)**: wiring, power,
+buttons and first light, starting with the 1 m prototype.
+
+<p>
+  <a href="docs/led-build.md#the-1-m-prototype"><img src="docs/media/led-wiring-proto.svg" width="430" alt="1 m prototype wiring: a power bank feeds the board and the Hilt; D11 and D12 drive the first Line, and folds join the four Lines into one strip"></a>
+  <a href="docs/led-build.md#where-each-wire-goes-on-the-carrier"><img src="docs/media/carrier-wiring.svg" width="380" alt="The back of the carrier with the pads to solder circled: D11, D12 and GND for the strip, U1 to U3 and GND for the buttons"></a>
+</p>
+
+## Voice commands
+
+*Prototype, in the `xiao_screen` build only.*
+
+Hold **USR3** and say a two-word command; let go when you're done. The
+screen shows *Listening...* while you hold it. A command heard replaces the
+button's own press; if nothing is heard, the press counts as usual (a quick
+press of A on this build still steps the Palette). A tap under 0.4 s skips
+the recognizer and acts at once. After a longer press the recognizer needs
+about half a second of silence to close the last word, so results come
+0.6-0.9 s after letting go; pausing a beat before letting go lets it finish
+while you still hold the button.
+
+| Say | Does |
+|-----|------|
+| *next palette*, *next colors* / *previous palette*, *previous colors* | step the Palette |
+| *lights up*, *more light* / *lights down*, *less light* | step brightness |
+| *faster clouds* / *slower clouds* | step cloud motion |
+| *freeze clouds* | freeze the clouds |
+| *bigger clouds* / *smaller clouds* | step cloud size |
+| *more clouds* / *fewer clouds*, *more sky* | step Clear Sky |
+| *sound on* / *sound off* | sound drives brightness, or not |
+| *reset heading* | Re-level |
+| *show status* | open or close the Status page |
+
+It runs Espressif's MultiNet7 English recognizer (ESP-SR, part of the
+Arduino core) on core 0, below the IMU and mic tasks, so the IMU keeps its
+rate and the LED core its frames. Listening takes about 27 ms of every
+32 ms of audio, so the Status display redraws slowly while you hold the
+button. The model (3.3 MB) lives in its own flash partition; write it once
+per board:
+
+```bash
+pio run -e xiao_screen -t upload_voice_model
+```
+
+Serial `t` listens for 3 s as if USR3 were held, `g` steps the gain the mic
+gets before the recognizer, `u` steps that closing silence (600 ms; 450,
+300 and 200 to experiment), `V` lists every phrase, and `i` shows the
+recognizer's timing. Each attempt logs what was heard, how much silence it
+took and how loud you were.
+
+## Serial console
+
+The firmware talks over the board's USB-C port. Open a console on it with
+PlatformIO's monitor, naming the env you flashed (it sets the 921600 baud):
+
+```bash
+pio device monitor -e xiao_screen --port /dev/ttyACM0
+```
+
+`--port` is only needed when more than one serial device is plugged in; the
+board shows up as `/dev/ttyACM0` on Linux (`/dev/cu.usbmodem*` on a Mac,
+`COMn` on Windows; `pio device list` shows them).
+
+- **Type `?` first.** It prints the firmware version, which USR pad each
+  button is on for this build, and every command.
+- **One key per command, no Enter.** The monitor sends each key as you type
+  it and doesn't echo it.
+- **Ctrl+C quits.**
+- **Quit before flashing or running a tool.** `pio run -t upload`,
+  `tools/capture_imu.py` and `tools/bringup.py` need the port to themselves:
+  with the monitor open, flashing fails or the monitor swallows what the tool
+  was waiting for.
+- **Start it again after a reset or replug.** The board's USB port goes away
+  while it restarts, and the monitor doesn't reconnect by itself.
+
+An unknown key says to type `?`. The board prints the same list, plus its
+version and which pads A, B and C are on, when you type `?` (or `h`):
+
+| Key | Does |
+|-----|------|
+| **Status** | |
+| `?` | this help, starting with the buttons and their pads (also `h`) |
+| `i` | status: profile, IMU, filter, rates, per-stage frame and display timings, mic, knobs |
+| `p` | raw button levels (0 = pressed) and how GPIO43 is wired |
+| **Controls** | |
+| `w` | as a quick press of C: open or close the Status page |
+| `v` | Blade view on or off |
+| `c` | start Mounting Calibration (as holding C for 5 s) |
+| `k` | log the 8-Encoder unit's counts, pushes and switch as they change (again: stop) |
+| **Sound** | |
+| `m` | sound drives brightness, or not (as the 8-Encoder unit's switch) |
+| `l` | log the mic's level and Loudness 10 times a second (again: stop) |
+| **Voice** (`xiao_screen`) | |
+| `t` | listen for 3 s, as if USR3 were held |
+| `g` | next voice gain (1x to 32x) |
+| `u` | next silence wait after letting go (600, 450, 300, 200 ms) |
+| `V` | list every spoken command |
+| **Motion** | |
+| `f` | next orientation filter (Mahony, Kalman) |
+| `a` | axis check, 5 times a second: which sensor axis sees gravity, where the Blade points (again: stop) |
+| `R` / `S` | start / stop streaming raw IMU samples as CSV (`tools/capture_imu.py`) |
+| **Performance** | |
+| `b` | Cloud Field micro-benchmark |
+| `z` | log a line every frame for 3 s; then `i` shows the worst loop, which should stay a few ms even with the port closed |
+
+## Compile flags
+
+Each env in [platformio.ini](platformio.ini) is one Dong Profile plus a few
+flags in its `build_flags`:
+
+| env               | profile                                                  | flags |
+|-------------------|----------------------------------------------------------|-------|
+| `xiao_screen`     | bare board on the bench; Blade drawn on the display      | `-DDONG_PROFILE_SCREEN -DKD_SCREEN_BLADE -DKD_VOICE` |
+| `xiao`            | 1 m, 4×60 Pixels, one folded Strand, 3 A budget          | `-DDONG_PROFILE_PROTO` |
+| `xiao_2m`         | 2 m, 4×120 Pixels, one folded Strand, 6 A, pack sensing  | `-DDONG_PROFILE_2M` |
+| `xiao_lightswarm` | LightSwarm Dong: 2 Strands × 150, software SPI, 1.6 A    | `-DDONG_PROFILE_LIGHTSWARM` |
+
+| Flag | Does |
+|------|------|
+| `-DDONG_PROFILE_PROTO`, `_SCREEN`, `_2M`, `_LIGHTSWARM` | picks the Dong Profile in [src/profiles.h](src/profiles.h): Blade length, Pixels, pins, IMU axes, Power Budget, battery. Exactly one is required. |
+| `-DKD_SCREEN_BLADE` | boots into the Blade view on the display instead of the Status page |
+| `-DKD_VOICE` | [voice commands](#voice-commands) on USR3. Needs `board_build.partitions = partitions/voice_16MB.csv` and the model written once with `pio run -e <env> -t upload_voice_model` (both set up for `xiao_screen`). |
+| `-DKD_FILTER=Kalman` | starts with the Kalman orientation filter instead of Mahony ([Orientation filters](#orientation-filters)) |
+
+`KD_VERSION` and `KD_COMMIT` are added by
+[tools/pio_version.py](tools/pio_version.py) ([Versioning](#versioning)).
+To try a flag without editing the file, set it for one build:
+
+```bash
+PLATFORMIO_BUILD_FLAGS="-DKD_FILTER=Kalman" pio run -e xiao -t upload
+```
+
 ## Hardware
 
 - Seeed **XIAO ESP32-S3 Plus with the 1.14" display** carrier: onboard
@@ -35,14 +195,8 @@ Wiring, power, buttons and first light:
 Each physical build is a **Dong Profile** in [src/profiles.h](src/profiles.h):
 Blade length, Pixels per Line, how Strands fold into Lines, pins, IMU axis
 mapping, Power Budget, battery. The IMU must be mapped so body +X points from
-the Hilt to the tip.
-
-| env               | profile                                                  |
-|-------------------|----------------------------------------------------------|
-| `xiao_screen`     | bare board on the bench; Blade drawn on the display      |
-| `xiao`            | 1 m, 4×60 Pixels, one folded Strand, 3 A budget          |
-| `xiao_2m`         | 2 m, 4×120 Pixels, one folded Strand, 6 A, pack sensing  |
-| `xiao_lightswarm` | LightSwarm Dong: 2 Strands × 150, software SPI, 1.6 A    |
+the Hilt to the tip. Each has its own PlatformIO env; see
+[Compile flags](#compile-flags).
 
 ## Using it
 
@@ -104,46 +258,6 @@ to full with the loudest sounds it has heard lately. A steady hum (a fan, a
 crowd) fades back to quiet within about 15 s, so beats and shouts over it
 still show. Serial `m` or the knob unit's switch turns this off and on.
 
-### Voice (prototype, `xiao_screen` only)
-
-Hold **USR3** and say a two-word command; let go when you're done. The
-screen shows *Listening...* while you hold it. A command heard replaces the
-button's own press; if nothing is heard, the press counts as usual (a quick
-press of A on this build still steps the Palette). A tap under 0.4 s skips
-the recognizer and acts at once. After a longer press the recognizer needs
-about half a second of silence to close the last word, so results come
-0.6-0.9 s after letting go; pausing a beat before letting go lets it finish
-while you still hold the button.
-
-| Say | Does |
-|-----|------|
-| *next palette*, *next colors* / *previous palette*, *previous colors* | step the Palette |
-| *lights up*, *more light* / *lights down*, *less light* | step brightness |
-| *faster clouds* / *slower clouds* | step cloud motion |
-| *freeze clouds* | freeze the clouds |
-| *bigger clouds* / *smaller clouds* | step cloud size |
-| *more clouds* / *fewer clouds*, *more sky* | step Clear Sky |
-| *sound on* / *sound off* | sound drives brightness, or not |
-| *reset heading* | Re-level |
-| *show status* | open or close the Status page |
-
-It runs Espressif's MultiNet7 English recognizer (ESP-SR, part of the
-Arduino core) on core 0, below the IMU and mic tasks, so the IMU keeps its
-rate and the LED core its frames. Listening takes about 27 ms of every
-32 ms of audio, so the Status display redraws slowly while you hold the
-button. The model (3.3 MB) lives in its own flash partition; write it once
-per board:
-
-```bash
-pio run -e xiao_screen -t upload_voice_model
-```
-
-Serial `t` listens for 3 s as if USR3 were held, `g` steps the gain the mic
-gets before the recognizer, `u` steps that closing silence (600 ms; 450,
-300 and 200 to experiment), `V` lists every phrase, and `i` shows the
-recognizer's timing. Each attempt logs what was heard, how much silence it
-took and how loud you were.
-
 ### Mounting Calibration (once per build)
 
 The Dong has to know how its IMU sits relative to the Blade. Hold **C for 5
@@ -183,62 +297,8 @@ pio run -e xiao -t upload
 ```
 
 All logic lives in [lib/core](lib/core/src/kd) as plain C++17 and is tested on
-the PC; [src/](src) is thin hardware glue.
-
-### Serial console
-
-The firmware talks over the board's USB-C port. Open a console on it with
-PlatformIO's monitor, naming the env you flashed (it sets the 921600 baud):
-
-```bash
-pio device monitor -e xiao_screen --port /dev/ttyACM0
-```
-
-`--port` is only needed when more than one serial device is plugged in; the
-board shows up as `/dev/ttyACM0` on Linux (`/dev/cu.usbmodem*` on a Mac,
-`COMn` on Windows; `pio device list` shows them).
-
-- **Type `?` first.** It prints the firmware version, which USR pad each
-  button is on for this build, and every command.
-- **One key per command, no Enter.** The monitor sends each key as you type
-  it and doesn't echo it.
-- **Ctrl+C quits.**
-- **Quit before flashing or running a tool.** `pio run -t upload`,
-  `tools/capture_imu.py` and `tools/bringup.py` need the port to themselves:
-  with the monitor open, flashing fails or the monitor swallows what the tool
-  was waiting for.
-- **Start it again after a reset or replug.** The board's USB port goes away
-  while it restarts, and the monitor doesn't reconnect by itself.
-
-An unknown key says to type `?`. The board prints the same list, plus its
-version and which pads A, B and C are on, when you type `?` (or `h`):
-
-| Key | Does |
-|-----|------|
-| **Status** | |
-| `?` | this help, starting with the buttons and their pads (also `h`) |
-| `i` | status: profile, IMU, filter, rates, per-stage frame and display timings, mic, knobs |
-| `p` | raw button levels (0 = pressed) and how GPIO43 is wired |
-| **Controls** | |
-| `w` | as a quick press of C: open or close the Status page |
-| `v` | Blade view on or off |
-| `c` | start Mounting Calibration (as holding C for 5 s) |
-| `k` | log the 8-Encoder unit's counts, pushes and switch as they change (again: stop) |
-| **Sound** | |
-| `m` | sound drives brightness, or not (as the 8-Encoder unit's switch) |
-| `l` | log the mic's level and Loudness 10 times a second (again: stop) |
-| **Voice** (`xiao_screen`) | |
-| `t` | listen for 3 s, as if USR3 were held |
-| `g` | next voice gain (1x to 32x) |
-| `u` | next silence wait after letting go (600, 450, 300, 200 ms) |
-| `V` | list every spoken command |
-| **Motion** | |
-| `f` | next orientation filter (Mahony, Kalman) |
-| `a` | axis check, 5 times a second: which sensor axis sees gravity, where the Blade points (again: stop) |
-| `R` / `S` | start / stop streaming raw IMU samples as CSV (`tools/capture_imu.py`) |
-| **Performance** | |
-| `b` | Cloud Field micro-benchmark |
-| `z` | log a line every frame for 3 s; then `i` shows the worst loop, which should stay a few ms even with the port closed |
+the PC; [src/](src) is thin hardware glue. After flashing, open the
+[serial console](#serial-console) and type `?`.
 
 ### Versioning
 
