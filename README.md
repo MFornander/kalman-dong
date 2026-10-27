@@ -107,7 +107,7 @@ still show. Serial `m` or the knob unit's switch turns this off and on.
 ### Voice (prototype, `xiao_screen` only)
 
 Hold **USR3** and say a two-word command; let go when you're done. The
-screen shows *Listening* while you hold it. A command heard replaces the
+screen shows *Listening...* while you hold it. A command heard replaces the
 button's own press; if nothing is heard, the press counts as usual (a quick
 press of A on this build still steps the Palette). A tap under 0.4 s skips
 the recognizer and acts at once. After a longer press the recognizer needs

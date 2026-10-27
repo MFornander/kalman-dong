@@ -925,17 +925,15 @@ void loop() {
                                                                       : 2;
         snprintf(banner, sizeof(banner), "%s", kOnRelease[pressRow][col]);
 #ifdef KD_VOICE
-        if (voiceOk && pressRow == static_cast<int>(kTalkButton) && pressNow.button >= 0) {
-            const char* action = strchr(kOnRelease[pressRow][col], '\n');  // "palette" in "Release:\npalette"
-            snprintf(banner, sizeof(banner), "Listening\nor %s", action ? action + 1 : "nothing");
-        }
+        if (voiceOk && pressRow == static_cast<int>(kTalkButton) && pressNow.button >= 0)
+            snprintf(banner, sizeof(banner), "Listening...");
 #endif
         bannerUntilMs = nowMs + 300;
         if (!status_display::bladeView()) wakeDisplay = true;  // the Status page shows the bar
     }
 #ifdef KD_VOICE
     else if (voiceOk && ptt.talking() && !heardThisPress) {
-        snprintf(banner, sizeof(banner), "Listening");
+        snprintf(banner, sizeof(banner), "Listening...");
         bannerUntilMs = nowMs + 300;
     }
 #endif
