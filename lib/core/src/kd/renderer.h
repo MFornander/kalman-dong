@@ -1,5 +1,6 @@
 // Renderer fills every Line with its Slice of the Cloud Field, then draws the
-// Local Layers on top: Ignition, Rest dimming and the low-battery warning.
+// Local Layers on top: Ignition, Rest dimming, Loudness and the low-battery
+// warning.
 #pragma once
 
 #include <cstddef>
@@ -28,6 +29,7 @@ struct FrameInput {
     float sinceIgnition = 1e9f;    // s since Ignition finished
     float restSeconds = 0.f;       // s at Rest; 0 while moving
     float batteryFraction = -1.f;  // 0..1, negative if unknown
+    float loudness = -1.f;         // 0..1 (kd/loudness.h); negative: sound doesn't change brightness
     CalibrationView calibration;
 };
 
@@ -39,6 +41,7 @@ public:
     static constexpr float kRestDimRamp = 3.f;       // s to reach the dimmed level
     static constexpr float kRestDimLevel = 0.2f;
     static constexpr float kWarningShare = 0.15f;    // share of each Line, from the Hilt, that pulses red
+    static constexpr float kQuietLevel = 0.15f;      // brightness left in silence when sound drives it
 
     explicit Renderer(const DongProfile& profile);
 

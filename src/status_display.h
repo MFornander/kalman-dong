@@ -20,6 +20,10 @@ struct Status {
     float imuHz = 0.f;
     bool atRest = false;
     bool recording = false;
+    // The microphone: Loudness 0..1 (kd/loudness.h), and whether it drives brightness.
+    bool micOk = false;
+    bool soundOn = false;
+    float loudness = 0.f;
     // The Blade view's header, from kd::readout() (kd/pose_readout.h).
     int pos[3] = {};
     int rot[3] = {};
