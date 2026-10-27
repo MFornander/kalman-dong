@@ -1,12 +1,14 @@
 // Kalman Dong firmware for the Seeed XIAO ESP32-S3 Plus + 1.14" display.
 //
-// Core 0: IMU task (833 Hz, highest priority) and the status display task.
+// Core 0: IMU task (833 Hz, highest priority), microphone task and the status
+//         display task.
 // Core 1: Arduino loop -- buttons, rendering the Cloud Field, pushing Pixels.
 //
 // All of the interesting logic lives in lib/core and is tested on the host;
 // this file only wires it to the hardware.
 
 #include <Arduino.h>
+#include <ESP_I2S.h>
 #include <Wire.h>
 #include <driver/gpio.h>
 #include <soc/gpio_reg.h>
@@ -18,6 +20,7 @@
 #include "kd/controls.h"
 #include "kd/filter_bank.h"
 #include "imu_lsm6.h"
+#include "kd/loudness.h"
 #include "kd/motion_tracker.h"
 #include "kd/mounting.h"
 #include "kd/noise.h"
@@ -40,6 +43,8 @@ constexpr int kImuInt1 = 41;
 constexpr int kButtonA = BUTTON_A_PIN;  // see profiles.h
 constexpr int kButtonB = BUTTON_B_PIN;
 constexpr int kButtonC = BUTTON_C_PIN;
+constexpr int kMicClock = 1;  // PDM microphone
+constexpr int kMicData = 2;
 
 constexpr uint32_t kMinFrameUs = 1000000 / 240;  // cap at 240 fps
 constexpr uint32_t kBiasSaveIntervalMs = 60000;   // spare the flash
@@ -75,6 +80,18 @@ struct RecordedSample {
 };
 QueueHandle_t recordQueue;
 volatile bool recording = false;
+
+// Microphone: the mic task measures Loudness; the render loop reads it.
+constexpr uint32_t kMicRate = 16000;
+constexpr size_t kMicBlock = 160;  // 10 ms
+I2SClass mic;
+bool micOk = false;
+kd::LoudnessMeter loudnessMeter(kMicRate);
+volatile float loudness = 0.f;
+volatile float micDb = -90.f, micQuietDb = -90.f, micLoudDb = -70.f;
+volatile float micUs = 0.f;  // smoothed time to measure one block
+bool soundOn = true;         // Loudness drives brightness; serial 'm' toggles
+bool printSound = false;     // serial 'l'
 
 // Rendering.
 kd::StrandMap strandMap(profile);
@@ -180,6 +197,24 @@ void imuTask(void*) {
             windowStart = now;
             windowCount = 0;
         }
+    }
+}
+
+void micTask(void*) {
+    int16_t block[kMicBlock];
+    for (;;) {
+        const size_t bytes = mic.readBytes(reinterpret_cast<char*>(block), sizeof(block));
+        if (bytes == 0) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+            continue;
+        }
+        const int64_t start = esp_timer_get_time();
+        loudnessMeter.update(block, bytes / sizeof(int16_t));
+        loudness = loudnessMeter.level();
+        micDb = loudnessMeter.decibels();
+        micQuietDb = loudnessMeter.quietDecibels();
+        micLoudDb = loudnessMeter.loudDecibels();
+        micUs = micUs + (float(esp_timer_get_time() - start) - micUs) * 0.05f;
     }
 }
 
@@ -290,6 +325,13 @@ void handleSerial() {
             case 'z':  // log a line every frame for 3 s, to test what logging costs
                 logTestUntilMs = millis() + 3000;
                 break;
+            case 'm':  // sound drives brightness, or not
+                soundOn = !soundOn;
+                Serial.printf("# sound %s\n", soundOn ? "drives brightness" : "off");
+                break;
+            case 'l':  // log the sound level 10 times a second
+                printSound = !printSound;
+                break;
             case 'w':  // as if C were pressed: open or close the Status page
                 toggleStatusPage = true;
                 break;
@@ -318,6 +360,9 @@ void handleSerial() {
                               (unsigned long)quickCCount, (unsigned long)statusToggleCount);
                 Serial.printf("# imu us: read %.0f track %.0f (filter %s)\n", imuReadUs, imuTrackUs,
                               tracker.filter().name());
+                Serial.printf("# mic %s: %.1f dB (quiet %.1f, loud %.1f) loudness %.2f, %.0f us per %u samples, %s\n",
+                              micOk ? "ok" : "failed", micDb, micQuietDb, micLoudDb, loudness, micUs,
+                              unsigned(kMicBlock), soundOn ? "drives brightness" : "off");
                 {
                     uint32_t textUs, barsUs;
                     status_display::drawTimes(textUs, barsUs);
@@ -448,8 +493,16 @@ void setup() {
         Serial.println("No LSM6 IMU found; showing un-anchored clouds.");
     }
 
+    mic.setPinsPdmRx(kMicClock, kMicData);
+    micOk = mic.begin(I2S_MODE_PDM_RX, kMicRate, I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO);
+    if (micOk)
+        xTaskCreatePinnedToCore(micTask, "mic", 4096, nullptr, configMAX_PRIORITIES - 3, nullptr, 0);
+    else
+        Serial.println("Microphone failed to start; sound won't change brightness.");
+
     status.profile = profile.name;
     status.imuChip = imu.chipName();
+    status.micOk = micOk;
     status.settings = settings;
     status_display::begin();
 #ifdef KD_SCREEN_BLADE
@@ -469,6 +522,7 @@ void loop() {
     static uint32_t lastBiasSaveMs = 0;
     static kd::Setting lastChanged = kd::Setting::None;
     static uint32_t lastAxisPrintMs = 0;
+    static uint32_t lastSoundPrintMs = 0;
     static bool calibrating = false;
     static char banner[sizeof(Status::banner)] = "";
     static uint32_t bannerUntilMs = 0;
@@ -483,6 +537,11 @@ void loop() {
     if (printAxes && !recording && nowMs - lastAxisPrintMs >= 200) {
         printAxisCheck();
         lastAxisPrintMs = nowMs;
+    }
+    if (printSound && !recording && nowMs - lastSoundPrintMs >= 100) {
+        Serial.printf("sound %6.1f dB  quiet %6.1f  loud %6.1f  loudness %.2f\n", micDb, micQuietDb, micLoudDb,
+                      loudness);
+        lastSoundPrintMs = nowMs;
     }
 
     auto onControl = [&](const kd::ControlEvent& e) {
@@ -586,6 +645,8 @@ void loop() {
     in.showTime = frameStartUs * 1e-6 * settings.motionValue();
     in.localTime = in.showTime;
     in.batteryFraction = battery;
+    const float loudnessNow = loudness;
+    if (micOk && soundOn) in.loudness = loudnessNow;
     bool atRest = false;
     kd::Quat rotZero;
     if (imuOk) {
@@ -687,6 +748,8 @@ void loop() {
     status.fps = fps;
     status.imuHz = imuHz;
     status.atRest = atRest;
+    status.soundOn = soundOn;
+    status.loudness = loudnessNow;
     if (!atRest || in.calibration.active) lastActiveMs = nowMs;
     status.asleep = nowMs - lastActiveMs >= status_display::kSleepAfterMs;
     {

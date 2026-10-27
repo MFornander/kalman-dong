@@ -14,6 +14,10 @@ float restDim(float restSeconds) {
     return lerpf(1.f, Renderer::kRestDimLevel, t);
 }
 
+float soundLevel(float loudness) {
+    return loudness < 0.f ? 1.f : lerpf(Renderer::kQuietLevel, 1.f, clampf(loudness, 0.f, 1.f));
+}
+
 }  // namespace
 
 Renderer::Renderer(const DongProfile& profile)
@@ -71,7 +75,7 @@ void Renderer::render(const FrameInput& in, const Settings& settings, Rgb8* line
 
     const bool igniting = in.ignitionProgress < 1.f;
     const float fade = igniting ? 0.f : clampf(in.sinceIgnition / kIgnitionFade, 0.f, 1.f);
-    const float level = settings.brightnessValue() * restDim(in.restSeconds);
+    const float level = settings.brightnessValue() * restDim(in.restSeconds) * soundLevel(in.loudness);
     const bool warn = in.batteryFraction >= 0.f && in.batteryFraction < criticalBattery_;
     const float pulse = 0.5f + 0.5f * std::sin(static_cast<float>(std::fmod(in.localTime * kPi, 2.0 * kPi)));
     const float hum = 0.92f + 0.08f * std::sin(static_cast<float>(std::fmod(in.localTime * 37.0, 2.0 * kPi)));

@@ -16,7 +16,8 @@ defined in [CONTEXT.md](CONTEXT.md); key decisions are in [docs/adr/](docs/adr/)
 ## Hardware
 
 - Seeed **XIAO ESP32-S3 Plus with the 1.14" display** carrier: onboard
-  LSM6DS3-family IMU (I2C, INT1 on GPIO41), ST7789 display, buttons A/B/C.
+  LSM6DS3-family IMU (I2C, INT1 on GPIO41), ST7789 display, buttons A/B/C
+  and a PDM microphone (clock GPIO1, data GPIO2).
 - **SK9822/APA102** 4-pin Pixels in 4 Lines along a 1-2 m Blade. Data and
   clock go on the pads D11/D12 (GPIO38/39; a second Strand uses D13/D15).
   The 1 m prototype drives them directly at 4 MHz; longer builds add a
@@ -61,6 +62,11 @@ Power on and hold the Dong still for a second. **Ignition** extends the
 Blade like a lightsaber while it learns which way is down, then it fades into
 the clouds. Re-level (hold C) points the clouds' reference heading where you
 are pointing. After a minute at Rest the Blade dims; any motion wakes it.
+
+Sound drives brightness: in the room's usual quiet the Blade glows at 15%,
+and it brightens to full with the loudest sounds it has heard lately. A
+steady hum (a fan, a crowd) fades back to quiet within about 15 s, so beats
+and shouts over it still show. Serial `m` turns this off and on.
 
 ### Mounting Calibration (once per build)
 
@@ -167,7 +173,8 @@ start Mounting Calibration, `f` switch orientation filter (Mahony / Kalman),
 `a` toggle axis check (5 Hz), `b` Cloud Field micro-benchmark, `v` toggle the
 Blade view, `R`/`S` start/stop raw IMU streaming, `z` log a line every frame
 for 3 s (then `i` shows the worst loop, which should stay a few ms even with
-the port closed).
+the port closed), `m` sound drives brightness or not, `l` log the
+microphone's level and Loudness 10 times a second.
 
 1. **Boot and IMU.** The Blade view comes up right away (C shows the Status page). `i`
    should name the chip (LSM6DS3 / LSM6DS3TR-C / LSM6DSO) and report about
@@ -193,7 +200,10 @@ the port closed).
    drift (the clouds slowly turning).
 9. **Drift data.** Record the board lying still and some waving for the
    replay tests: `uv run tools/capture_imu.py bench-still --seconds 120`.
-10. **LED outputs (optional).** A scope or logic analyzer on GPIO38 (data)
+10. **Sound.** `l` logs the microphone: a quiet room sits at Loudness 0 and
+    the bars at 15% (the Status page's bottom row shows it too). Talk or clap
+    near the board: the bars brighten at once and fade back within a second.
+11. **LED outputs (optional).** A scope or logic analyzer on GPIO38 (data)
     and GPIO39 (clock) should show the SK9822 stream while the display keeps
     updating; a short strip on those pads works too (mind the 3.3 V logic).
 

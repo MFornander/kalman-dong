@@ -84,6 +84,10 @@ _Avoid_: Calibrate, reset, recenter, zero
 The Dong being held or laid still; used to quietly re-learn sensor drift, and after long enough, to dim the Pixels until the next motion.
 _Avoid_: Idle, sleep, standby
 
+**Loudness**:
+How loud the sound around the Dong is just now, from 0 in the room's usual quiet to 1 at the loudest it has heard lately. Each Dong hears for itself. While sound is turned on, it scales the brightness.
+_Avoid_: Volume, audio level, sound level
+
 **Show Clock**:
 The single time base that drives all Cloud Field evolution; with Show Clock and orientation equal, two Dongs render identically. Later shared between Dongs for sync.
 _Avoid_: Effect time, node time, millis

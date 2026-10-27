@@ -144,6 +144,23 @@ TEST_CASE("a minute at Rest dims the Blade; any motion brings it straight back")
     CHECK(resting.meanLevel() == doctest::Approx(awake.meanLevel() * Renderer::kRestDimLevel).epsilon(0.05));
 }
 
+TEST_CASE("when sound drives brightness, silence dims the Blade and loud sound brings it to full") {
+    Frame plain(profile()), quiet(profile()), half(profile()), loud(profile());
+    Settings s;
+    FrameInput in = steady();
+    plain.renderer.render(in, s, plain.px.data());
+    in.loudness = 0.f;
+    quiet.renderer.render(in, s, quiet.px.data());
+    in.loudness = 0.5f;
+    half.renderer.render(in, s, half.px.data());
+    in.loudness = 1.f;
+    loud.renderer.render(in, s, loud.px.data());
+    CHECK(loud.px == plain.px);
+    CHECK(quiet.meanLevel() == doctest::Approx(plain.meanLevel() * Renderer::kQuietLevel).epsilon(0.05));
+    CHECK(half.meanLevel() > quiet.meanLevel());
+    CHECK(half.meanLevel() < loud.meanLevel());
+}
+
 TEST_CASE("a nearly empty battery pulses red at the Hilt end") {
     Frame f(profile());
     Settings s;
