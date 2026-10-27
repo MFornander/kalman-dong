@@ -62,7 +62,7 @@ depends on the build. On the LED builds (`xiao`, `xiao_2m`,
 `xiao_lightswarm`) C is USR3. On the bare board (`xiao_screen`) A and C swap
 so the Palette lands on USR3, the easiest button to press, and C is USR1.
 Each Dong Profile picks its button pins (`BUTTON_*_PIN` in
-[src/profiles.h](src/profiles.h)). Type `?` on the serial console to see the
+[src/profiles.h](src/profiles.h)). Type `?` on the [serial console](#serial-console) to see the
 pads of the build that's running.
 
 ### Knobs
@@ -136,13 +136,55 @@ pio test -e native
 pio run -e xiao -t upload
 ```
 
+All logic lives in [lib/core](lib/core/src/kd) as plain C++17 and is tested on
+the PC; [src/](src) is thin hardware glue.
+
+### Serial console
+
+The firmware talks over the board's USB-C port. Open a console on it with
+PlatformIO's monitor, naming the env you flashed (it sets the 921600 baud):
+
 ```bash
-pio device monitor -e xiao
+pio device monitor -e xiao_screen --port /dev/ttyACM0
 ```
 
-All logic lives in [lib/core](lib/core/src/kd) as plain C++17 and is tested on
-the PC; [src/](src) is thin hardware glue. In the serial monitor, `i` prints
-status.
+`--port` is only needed when more than one serial device is plugged in; the
+board shows up as `/dev/ttyACM0` on Linux (`/dev/cu.usbmodem*` on a Mac,
+`COMn` on Windows; `pio device list` shows them).
+
+- **Type `?` first.** It prints the firmware version, which USR pad each
+  button is on for this build, and every command.
+- **One key per command, no Enter.** The monitor sends each key as you type
+  it and doesn't echo it.
+- **Ctrl+C quits.**
+- **Quit before flashing or running a tool.** Only one program can hold the
+  port, so `pio run -t upload`, `tools/capture_imu.py` and `tools/bringup.py`
+  fail while the monitor is open.
+- **Start it again after a reset or replug.** The board's USB port goes away
+  while it restarts, and the monitor doesn't reconnect by itself.
+
+An unknown key says to type `?`. The board prints the same list, plus its
+version and which pads A, B and C are on, when you type `?` (or `h`):
+
+| Key | Does |
+|-----|------|
+| **Status** | |
+| `?` | this help, starting with the buttons and their pads (also `h`) |
+| `i` | status: profile, IMU, filter, rates, per-stage frame and display timings, knobs |
+| `p` | raw button levels (0 = pressed) and how GPIO43 is wired |
+| **Controls** | |
+| `w` | as a quick press of C: open or close the Status page |
+| `v` | Blade view on or off |
+| `c` | start Mounting Calibration (as holding C for 5 s) |
+| `k` | log the 8-Encoder unit's counts, pushes and switch as they change (again: stop) |
+| **Motion** | |
+| `f` | next orientation filter (Mahony, Kalman) |
+| `a` | axis check, 5 times a second: which sensor axis sees gravity, where the Blade points (again: stop) |
+| `R` / `S` | start / stop streaming raw IMU samples as CSV (`tools/capture_imu.py`) |
+| **Performance** | |
+| `b` | Cloud Field micro-benchmark |
+| `z` | log a line every frame for 3 s; then `i` shows the worst loop, which should stay a few ms even with the port closed |
+
 
 ### Versioning
 
@@ -155,7 +197,7 @@ it again when it is rebased.
 The build compiles in the version and the git commit (`git describe`, with
 `-dirty` for uncommitted changes) through
 [tools/pio_version.py](tools/pio_version.py). The serial console shows them
-at boot, at the top of `?` and `i`, and IMU recordings carry `fw=` in their
+at boot and at the top of `?` and `i`, and IMU recordings carry `fw=` in their
 header:
 
 ```
@@ -212,32 +254,7 @@ Steps can also run one at a time (`check`, `mount`, `record NAME`,
 pio run -e xiao_screen -t upload
 ```
 
-```bash
-pio device monitor -e xiao_screen
-```
-
-Serial commands are one key each, with no Enter needed; an unknown key
-says to type `?`. The board prints the same list, plus which pads A, B and C
-are on for the running build, when you type `?` (or `h`).
-
-| Key | Does |
-|-----|------|
-| **Status** | |
-| `?` | this help, starting with the buttons and their pads (also `h`) |
-| `i` | status: profile, IMU, filter, rates, per-stage frame and display timings, knobs |
-| `p` | raw button levels (0 = pressed) and how GPIO43 is wired |
-| **Controls** | |
-| `w` | as a quick press of C: open or close the Status page |
-| `v` | Blade view on or off |
-| `c` | start Mounting Calibration (as holding C for 5 s) |
-| `k` | log the 8-Encoder unit's counts, pushes and switch as they change (again: stop) |
-| **Motion** | |
-| `f` | next orientation filter (Mahony, Kalman) |
-| `a` | axis check, 5 times a second: which sensor axis sees gravity, where the Blade points (again: stop) |
-| `R` / `S` | start / stop streaming raw IMU samples as CSV (`tools/capture_imu.py`) |
-| **Performance** | |
-| `b` | Cloud Field micro-benchmark |
-| `z` | log a line every frame for 3 s; then `i` shows the worst loop, which should stay a few ms even with the port closed |
+Then open the [serial console](#serial-console) and type `?`.
 
 1. **Boot and IMU.** The Blade view comes up right away (C shows the Status page). `i`
    should name the chip (LSM6DS3 / LSM6DS3TR-C / LSM6DSO) and report about
