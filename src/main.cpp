@@ -2,7 +2,8 @@
 //
 // Core 0: IMU task (833 Hz, highest priority), microphone task and the status
 //         display task.
-// Core 1: Arduino loop -- buttons, rendering the Cloud Field, pushing Pixels.
+// Core 1: Arduino loop -- buttons and knobs, rendering the Cloud Field, pushing
+//         Pixels.
 //
 // All of the interesting logic lives in lib/core and is tested on the host;
 // this file only wires it to the hardware.
@@ -18,9 +19,11 @@
 
 #include "kd/button_log.h"
 #include "kd/controls.h"
+#include "encoder8.h"
 #include "kd/filter_bank.h"
 #include "imu_lsm6.h"
 #include "kd/loudness.h"
+#include "kd/knob_panel.h"
 #include "kd/motion_tracker.h"
 #include "kd/mounting.h"
 #include "kd/noise.h"
@@ -34,7 +37,18 @@
 #include "store.h"
 #include "kd/strand_map.h"
 
+// Set from VERSION and git by tools/pio_version.py.
+#ifndef KD_VERSION
+#define KD_VERSION "dev"
+#endif
+#ifndef KD_COMMIT
+#define KD_COMMIT "unknown"
+#endif
+
 namespace {
+
+constexpr const char* kVersion = KD_VERSION;
+constexpr const char* kCommit = KD_COMMIT;
 
 // Carrier board pins (Seeed schematic / arduino-esp32 XIAO_ESP32S3_Plus variant).
 constexpr int kImuSda = 5;
@@ -90,7 +104,7 @@ kd::LoudnessMeter loudnessMeter(kMicRate);
 volatile float loudness = 0.f;
 volatile float micDb = -90.f, micQuietDb = -90.f, micLoudDb = -70.f;
 volatile float micUs = 0.f;  // smoothed time to measure one block
-bool soundOn = true;         // Loudness drives brightness; serial 'm' toggles
+bool soundOn = true;         // Loudness drives brightness; serial 'm' or the 8-Encoder unit's switch
 bool printSound = false;     // serial 'l'
 
 // Rendering.
@@ -117,6 +131,38 @@ uint8_t readButtons() {
 }
 
 void sampleButtons(void*) { buttonLog.sample(readButtons(), millis()); }
+
+// An 8-Encoder unit on the Grove port, if one was plugged in at boot (plugging
+// into a powered bus can hang it). It shares the IMU's bus, so the IMU task
+// reads it between samples and queues what it saw.
+constexpr int64_t kKnobPeriodUs = 20000;
+constexpr int64_t kKnobRetryUs = 2000000;  // after the unit stops answering, look again this often
+Encoder8 knobUnit;
+bool knobsFound = false;  // answered at boot
+volatile bool knobsOk = false;
+volatile float knobReadUs = 0.f;  // smoothed time per read of the unit
+QueueHandle_t knobQueue;
+kd::KnobPanel knobPanel;
+bool printKnobs = false;  // serial 'k'
+
+// IMU task only.
+void pollKnobs() {
+    static int failures = 0;
+    if (!knobsOk) {
+        knobsOk = knobUnit.begin(Wire);
+        failures = 0;
+        return;
+    }
+    const int64_t start = esp_timer_get_time();
+    kd::KnobReading r;
+    if (knobUnit.read(r)) {
+        failures = 0;
+        xQueueSend(knobQueue, &r, 0);
+    } else if (++failures >= 3) {
+        knobsOk = false;
+    }
+    knobReadUs = knobReadUs + (float(esp_timer_get_time() - start) - knobReadUs) * 0.05f;
+}
 
 // Status and the latest Lines, shared with the display task.
 portMUX_TYPE statusMux = portMUX_INITIALIZER_UNLOCKED;
@@ -156,6 +202,7 @@ void IRAM_ATTR onImuInterrupt() {
 
 void imuTask(void*) {
     int64_t last = esp_timer_get_time();
+    int64_t lastKnobUs = last;
     int64_t windowStart = last;
     uint32_t windowCount = 0;
     for (;;) {
@@ -189,6 +236,12 @@ void imuTask(void*) {
         if (recording) {
             RecordedSample rec{static_cast<uint32_t>(now), r};
             xQueueSend(recordQueue, &rec, 0);  // drop rather than stall
+        }
+
+        // Right after a sample the bus is free until the next one.
+        if (knobsFound && now - lastKnobUs >= (knobsOk ? kKnobPeriodUs : kKnobRetryUs)) {
+            lastKnobUs = now;
+            pollKnobs();
         }
 
         ++windowCount;
@@ -272,13 +325,71 @@ void applyMounting(const kd::Quat& next) {
     tracker.begin(mounting.rotate(sensorBias));
 }
 
+// The carrier's name for a button's pin, as printed by the button.
+const char* padName(int pin) {
+    switch (pin) {
+        case 43: return "USR1";
+        case 44: return "USR2";
+        case 11: return "USR3";
+        default: return "?";
+    }
+}
+
+// Serial '?': the buttons, then every command grouped by what it's for.
+void printHelp() {
+    Serial.printf(
+        "# kalman-dong %s (%s), profile %s\n"
+        "#\n"
+        "# Buttons on this build: A = %s, B = %s, C = %s (each Dong Profile picks them)\n"
+        "#   Quick: let go before 2 s; Long: let go at 2-5 s; Held: reaches 5 s\n"
+        "#        Quick          Long         Held\n"
+        "#   A    next Palette   cloud size   step Clear Sky\n"
+        "#   B    cloud motion   brightness   step Girth\n"
+        "#   C    Status page    Re-level     Mounting Calibration\n"
+        "#   An 8-Encoder unit's knob 8 pushes like C, and its switch turns sound on and off (README, Knobs).\n"
+        "#\n",
+        kVersion, kCommit, profile.name, padName(kButtonA), padName(kButtonB), padName(kButtonC));
+    Serial.print(
+        "# Serial commands (one key each, no Enter needed)\n"
+        "#\n"
+        "# Status\n"
+        "#   ?  this help (also h)\n"
+        "#   i  status: profile, IMU, filter, rates, frame and display timings, mic, knobs\n"
+        "#   p  raw button levels (0 = pressed) and how GPIO43 is wired\n"
+        "#\n"
+        "# Controls\n"
+        "#   w  as a quick press of C: open or close the Status page\n"
+        "#   v  Blade view on or off\n"
+        "#   c  start Mounting Calibration (as holding C for 5 s)\n"
+        "#   k  log the 8-Encoder unit's counts, pushes and switch as they change (again: stop)\n"
+        "#\n"
+        "# Sound\n"
+        "#   m  sound drives brightness, or not (as the 8-Encoder unit's switch)\n"
+        "#   l  log the mic's level and Loudness 10 times a second (again: stop)\n"
+        "#\n"
+        "# Motion\n"
+        "#   f  next orientation filter (Mahony, Kalman)\n"
+        "#   a  axis check, 5 times a second: which sensor axis sees gravity, where the Blade points (again: stop)\n"
+        "#   R  start streaming raw IMU samples as CSV (tools/capture_imu.py)\n"
+        "#   S  stop streaming\n"
+        "#\n"
+        "# Performance\n"
+        "#   b  Cloud Field micro-benchmark\n"
+        "#   z  log a line every frame for 3 s, then 'i' shows the worst loop\n");
+}
+
 void handleSerial() {
     while (Serial.available()) {
-        switch (Serial.read()) {
+        const int key = Serial.read();
+        switch (key) {
+            case '?':
+            case 'h':
+                printHelp();
+                break;
             case 'R':
                 xQueueReset(recordQueue);
-                Serial.printf("# kalman-dong imu v1 profile=%s chip=%s rate=%.0f frame=sensor\n", profile.name,
-                              imu.chipName(), ImuLsm6::kRateHz);
+                Serial.printf("# kalman-dong imu v1 fw=%s profile=%s chip=%s rate=%.0f frame=sensor\n", kVersion,
+                              profile.name, imu.chipName(), ImuLsm6::kRateHz);
                 Serial.println("t_us,gx,gy,gz,ax,ay,az");
                 recording = true;
                 break;
@@ -332,6 +443,9 @@ void handleSerial() {
             case 'l':  // log the sound level 10 times a second
                 printSound = !printSound;
                 break;
+            case 'k':  // log the 8-Encoder unit's readings as they change
+                printKnobs = !printKnobs;
+                break;
             case 'w':  // as if C were pressed: open or close the Status page
                 toggleStatusPage = true;
                 break;
@@ -346,6 +460,7 @@ void handleSerial() {
                               (unsigned long)REG_READ(GPIO_ENABLE1_REG));
                 break;
             case 'i':
+                Serial.printf("# kalman-dong %s (%s)\n", kVersion, kCommit);
                 Serial.printf("# profile=%s chip=%s filter=%s imu=%.0fHz fps=%.0f bias=%.4f,%.4f,%.4f\n",
                               profile.name, imu.chipName(), tracker.filter().name(), imuHz, status.fps,
                               tracker.gyroBias().x, tracker.gyroBias().y, tracker.gyroBias().z);
@@ -363,6 +478,12 @@ void handleSerial() {
                 Serial.printf("# mic %s: %.1f dB (quiet %.1f, loud %.1f) loudness %.2f, %.0f us per %u samples, %s\n",
                               micOk ? "ok" : "failed", micDb, micQuietDb, micLoudDb, loudness, micUs,
                               unsigned(kMicBlock), soundOn ? "drives brightness" : "off");
+                if (knobsOk)
+                    Serial.printf("# knobs: 8-Encoder unit firmware %u, read %.0f us, switch %s\n",
+                                  unsigned(knobUnit.firmware()), knobReadUs, knobPanel.switchOn() ? "on" : "off");
+                else
+                    Serial.println(knobsFound ? "# knobs: 8-Encoder unit stopped answering"
+                                              : "# knobs: no 8-Encoder unit at boot");
                 {
                     uint32_t textUs, barsUs;
                     status_display::drawTimes(textUs, barsUs);
@@ -372,6 +493,7 @@ void handleSerial() {
                 }
                 break;
             default:
+                if (key > ' ' && key < 127) Serial.printf("# unknown command '%c'; ? for help\n", key);
                 break;
         }
     }
@@ -439,6 +561,7 @@ float readBattery(float previous) {
 }  // namespace
 
 void setup() {
+    Serial.setTxBufferSize(4096);  // room for '?' and 'i' in one go: writes never wait (below)
     Serial.begin(921600);
     // Never wait on USB: with the port closed, a full buffer made every log
     // line block for up to 2 s and stalled the whole loop.
@@ -475,6 +598,7 @@ void setup() {
     trackerLock = xSemaphoreCreateMutex();
     imuSignal = xSemaphoreCreateBinary();
     recordQueue = xQueueCreate(512, sizeof(RecordedSample));
+    knobQueue = xQueueCreate(8, sizeof(kd::KnobReading));
 
     releaseI2cBus();
     Wire.begin(kImuSda, kImuScl, 400000);
@@ -485,6 +609,8 @@ void setup() {
     if (!store::loadMounting(mounting) && !kd::mountingFromAxisMap(profile.imuAxes, mounting))
         Serial.println("Dong Profile imuAxes is not a rotation; using sensor axes as-is");
     tracker.begin(mounting.rotate(store::loadGyroBias()));
+    knobsOk = knobsFound = knobUnit.begin(Wire);
+    if (knobsOk) Serial.printf("8-Encoder unit found, firmware %u\n", unsigned(knobUnit.firmware()));
     if (imuOk) {
         pinMode(kImuInt1, INPUT);
         attachInterrupt(kImuInt1, onImuInterrupt, RISING);
@@ -510,6 +636,7 @@ void setup() {
     wakeDisplay = false;  // go straight to the Blade view so Ignition is visible
 #endif
     xTaskCreatePinnedToCore(displayTask, "display", 6144, nullptr, 1, nullptr, 0);
+    Serial.printf("# kalman-dong %s (%s) ready; ? for help\n", kVersion, kCommit);
 }
 
 void loop() {
@@ -545,9 +672,10 @@ void loop() {
     }
 
     auto onControl = [&](const kd::ControlEvent& e) {
-        static const char* const kKinds[] = {"none", "changed", "wake display", "re-level", "calibrate mounting"};
+        static const char* const kKinds[] = {"none",     "changed",            "wake display", "re-level",
+                                             "calibrate mounting", "sound on", "sound off"};
         static const char* const kSettings[] = {"",      "Palette",      "Clear Sky",  "brightness",
-                                                "Girth", "cloud motion", "cloud size"};
+                                                "Girth", "cloud motion", "cloud size", "quiet glow"};
         lastActiveMs = nowMs;
         Serial.printf("# control at %lu ms: %s %s -> palette %s, brightness %.0f%%, girth %.2f m, clear sky %.0f%%\n",
                       (unsigned long)nowMs, kKinds[static_cast<int>(e.kind)], kSettings[static_cast<int>(e.changed)],
@@ -560,6 +688,8 @@ void loop() {
             xSemaphoreGive(trackerLock);
         }
         if (e.kind == kd::ControlEvent::Kind::CalibrateMounting) startCalibration();
+        if (e.kind == kd::ControlEvent::Kind::SoundOn || e.kind == kd::ControlEvent::Kind::SoundOff)
+            soundOn = e.kind == kd::ControlEvent::Kind::SoundOn;  // the 8-Encoder unit's switch
         // In the Blade view a change shows in the header and the bars stay in
         // sight; only C's short press (its job) opens the Status page.
         if (status_display::bladeView() && e.kind != kd::ControlEvent::Kind::WakeDisplay) {
@@ -583,8 +713,15 @@ void loop() {
                 case kd::Setting::CloudSize:
                     snprintf(banner, sizeof(banner), "Cloud size\n%.1f m", settings.cloudSizeValue());
                     break;
+                case kd::Setting::QuietGlow:
+                    snprintf(banner, sizeof(banner), "Quiet glow\n%.0f%%", settings.quietGlowValue() * 100);
+                    break;
                 case kd::Setting::None:
-                    snprintf(banner, sizeof(banner), "%s", e.kind == kd::ControlEvent::Kind::Relevel ? "Re-leveled" : "");
+                    snprintf(banner, sizeof(banner), "%s",
+                             e.kind == kd::ControlEvent::Kind::Relevel    ? "Re-leveled"
+                             : e.kind == kd::ControlEvent::Kind::SoundOn  ? "Sound\non"
+                             : e.kind == kd::ControlEvent::Kind::SoundOff ? "Sound\noff"
+                                                                          : "");
                     break;
             }
             bannerUntilMs = nowMs + 2000;
@@ -612,19 +749,45 @@ void loop() {
     const uint32_t buttonsMs = millis();
     for (const kd::ControlEvent& e : controls.update(buttonsDown & 1, buttonsDown & 2, buttonsDown & 4, buttonsMs))
         onControl(e);
-    // While a button is held, say what letting go will do (kd/controls.h).
+    kd::KnobReading knobs;
+    while (xQueueReceive(knobQueue, &knobs, 0) == pdTRUE) {
+        static kd::KnobReading shown;
+        if (printKnobs && (memcmp(knobs.counts, shown.counts, sizeof(knobs.counts)) != 0 ||
+                           knobs.pushed != shown.pushed || knobs.switchOn != shown.switchOn)) {
+            Serial.printf("# knobs at %lu ms: %ld %ld %ld %ld %ld %ld %ld %ld pushed 0x%02x switch %d\n",
+                          (unsigned long)knobs.ms, (long)knobs.counts[0], (long)knobs.counts[1],
+                          (long)knobs.counts[2], (long)knobs.counts[3], (long)knobs.counts[4],
+                          (long)knobs.counts[5], (long)knobs.counts[6], (long)knobs.counts[7], knobs.pushed,
+                          knobs.switchOn);
+            shown = knobs;
+        }
+        if (knobs.pushed) lastActiveMs = nowMs;
+        for (const kd::ControlEvent& e : knobPanel.update(knobs, controls)) onControl(e);
+    }
+    // While a button or knob is held, say what letting go will do
+    // (kd/controls.h, kd/knob_panel.h). Knob 8 is button C.
     const kd::Controls::PressInProgress pressNow = controls.pressInProgress(buttonsMs);
-    const int holdSegments = pressNow.button >= 0 ? pressNow.segments : -1;
-    if (pressNow.button >= 0) {
-        static const char* const kOnRelease[3][3] = {
+    const kd::KnobPanel::PressInProgress knobNow = knobPanel.pressInProgress(buttonsMs);
+    int pressRow = pressNow.button;
+    int holdSegments = pressNow.segments;
+    kd::ButtonTracker::Press onRelease = pressNow.onRelease;
+    if (pressRow < 0 && knobNow.knob >= 0) {
+        pressRow = knobNow.knob == 7 ? 2 : 3;
+        holdSegments = knobNow.segments;
+        onRelease = knobNow.onRelease;
+    }
+    if (pressRow < 0) holdSegments = -1;
+    if (pressRow >= 0) {
+        static const char* const kOnRelease[4][3] = {
             {"Release:\npalette", "Release:\ncloud size", ""},
             {"Release:\nclouds", "Release:\nbrightness", ""},
             {"Release:\nstatus", "Release:\nre-level", ""},
+            {"Release:\nstatus", "Release:\ndefault", ""},  // knobs 1-6
         };
-        const int col = pressNow.onRelease == kd::ButtonTracker::Press::Quick  ? 0
-                        : pressNow.onRelease == kd::ButtonTracker::Press::Long ? 1
-                                                                               : 2;
-        snprintf(banner, sizeof(banner), "%s", kOnRelease[pressNow.button][col]);
+        const int col = onRelease == kd::ButtonTracker::Press::Quick  ? 0
+                        : onRelease == kd::ButtonTracker::Press::Long ? 1
+                                                                      : 2;
+        snprintf(banner, sizeof(banner), "%s", kOnRelease[pressRow][col]);
         bannerUntilMs = nowMs + 300;
         if (!status_display::bladeView()) wakeDisplay = true;  // the Status page shows the bar
     }

@@ -156,9 +156,22 @@ TEST_CASE("when sound drives brightness, silence dims the Blade and loud sound b
     in.loudness = 1.f;
     loud.renderer.render(in, s, loud.px.data());
     CHECK(loud.px == plain.px);
-    CHECK(quiet.meanLevel() == doctest::Approx(plain.meanLevel() * Renderer::kQuietLevel).epsilon(0.05));
+    CHECK(quiet.meanLevel() == doctest::Approx(plain.meanLevel() * s.quietGlowValue()).epsilon(0.05));
+    CHECK(s.quietGlowValue() == doctest::Approx(0.15f));
     CHECK(half.meanLevel() > quiet.meanLevel());
     CHECK(half.meanLevel() < loud.meanLevel());
+}
+
+TEST_CASE("the quiet glow setting sets how bright silence is") {
+    Frame low(profile()), high(profile());
+    Settings s;
+    FrameInput in = steady();
+    in.loudness = 0.f;
+    s.quietGlow = 0;
+    low.renderer.render(in, s, low.px.data());
+    s.quietGlow = 4;
+    high.renderer.render(in, s, high.px.data());
+    CHECK(high.meanLevel() == doctest::Approx(low.meanLevel() * 0.75f / 0.05f).epsilon(0.1));
 }
 
 TEST_CASE("a nearly empty battery pulses red at the Hilt end") {

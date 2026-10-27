@@ -25,6 +25,8 @@ defined in [CONTEXT.md](CONTEXT.md); key decisions are in [docs/adr/](docs/adr/)
 - The prototype runs from a two-port USB power bank: one port to the board's
   USB-C, one to the Pixels' 5 V at the Hilt. Three external buttons wire to
   the U1-U3 pads.
+- Optional: an **M5Stack 8-Encoder unit** (U153) on the Grove port gives every
+  setting its own knob (see [Knobs](#knobs)).
 
 Wiring, power, buttons and first light:
 [docs/led-build.md](docs/led-build.md), with the
@@ -55,18 +57,50 @@ Quick, amber for Long) and what letting go will do.
 | B      | cloud motion: frozen, 1x, 2x | step brightness | step Girth | USR2 | USR2 |
 | C      | Status page (again to close; closes itself after 30 s) | Re-level | Mounting Calibration | USR1 | USR3 |
 
+A, B and C are wired to the carrier's USR1-USR3 buttons, and which is which
+depends on the build. On the LED builds (`xiao`, `xiao_2m`,
+`xiao_lightswarm`) C is USR3. On the bare board (`xiao_screen`) A and C swap
+so the Palette lands on USR3, the easiest button to press, and C is USR1.
 Each Dong Profile picks its button pins (`BUTTON_*_PIN` in
-[src/profiles.h](src/profiles.h)).
+[src/profiles.h](src/profiles.h)). Type `?` on the [serial console](#serial-console) to see the
+pads of the build that's running.
+
+### Knobs
+
+With an [M5Stack 8-Encoder unit](https://shop.m5stack.com/products/8-encoder-unit-stm32f030)
+plugged into the Grove port (before power-on), each setting has its own knob,
+counted 1-8 as printed on the unit. One click of a knob moves its setting one
+step; settings stop at their ends, and the Palette wraps around. The buttons
+keep working alongside.
+
+| Knob | Turn         | Push: Quick | Long (2 s)      | Held (5 s)           |
+|------|--------------|-------------|-----------------|----------------------|
+| 1    | Palette      | Status page | back to default |                      |
+| 2    | brightness   | Status page | back to default |                      |
+| 3    | Clear Sky    | Status page | back to default |                      |
+| 4    | cloud size   | Status page | back to default |                      |
+| 5    | cloud motion | Status page | back to default |                      |
+| 6    | Girth        | Status page | back to default |                      |
+| 7    | quiet glow: 5, 15, 30, 50, 75% | Status page | back to default |  |
+| 8    | spare        | Status page | Re-level        | Mounting Calibration |
+
+Knob 8's push works like button C. A quick push never changes a setting, so
+bumping a knob while turning it is harmless. **Quiet glow** (knob 7) is how
+bright the Blade stays in silence while sound drives brightness. The
+**toggle switch** turns sound on and off: it decides at power-on and
+whenever it's flipped, and serial `m` still works in between. The unit's
+LEDs stay off. It runs from the Grove port's 3.3 V as it is.
 
 Power on and hold the Dong still for a second. **Ignition** extends the
 Blade like a lightsaber while it learns which way is down, then it fades into
 the clouds. Re-level (hold C) points the clouds' reference heading where you
 are pointing. After a minute at Rest the Blade dims; any motion wakes it.
 
-Sound drives brightness: in the room's usual quiet the Blade glows at 15%,
-and it brightens to full with the loudest sounds it has heard lately. A
-steady hum (a fan, a crowd) fades back to quiet within about 15 s, so beats
-and shouts over it still show. Serial `m` turns this off and on.
+Sound drives brightness: in the room's usual quiet the Blade glows at 15%
+(the *quiet glow*; knob 7 on an 8-Encoder unit changes it), and it brightens
+to full with the loudest sounds it has heard lately. A steady hum (a fan, a
+crowd) fades back to quiet within about 15 s, so beats and shouts over it
+still show. Serial `m` or the knob unit's switch turns this off and on.
 
 ### Mounting Calibration (once per build)
 
@@ -106,13 +140,76 @@ pio test -e native
 pio run -e xiao -t upload
 ```
 
+All logic lives in [lib/core](lib/core/src/kd) as plain C++17 and is tested on
+the PC; [src/](src) is thin hardware glue.
+
+### Serial console
+
+The firmware talks over the board's USB-C port. Open a console on it with
+PlatformIO's monitor, naming the env you flashed (it sets the 921600 baud):
+
 ```bash
-pio device monitor -e xiao
+pio device monitor -e xiao_screen --port /dev/ttyACM0
 ```
 
-All logic lives in [lib/core](lib/core/src/kd) as plain C++17 and is tested on
-the PC; [src/](src) is thin hardware glue. In the serial monitor, `i` prints
-status.
+`--port` is only needed when more than one serial device is plugged in; the
+board shows up as `/dev/ttyACM0` on Linux (`/dev/cu.usbmodem*` on a Mac,
+`COMn` on Windows; `pio device list` shows them).
+
+- **Type `?` first.** It prints the firmware version, which USR pad each
+  button is on for this build, and every command.
+- **One key per command, no Enter.** The monitor sends each key as you type
+  it and doesn't echo it.
+- **Ctrl+C quits.**
+- **Quit before flashing or running a tool.** `pio run -t upload`,
+  `tools/capture_imu.py` and `tools/bringup.py` need the port to themselves:
+  with the monitor open, flashing fails or the monitor swallows what the tool
+  was waiting for.
+- **Start it again after a reset or replug.** The board's USB port goes away
+  while it restarts, and the monitor doesn't reconnect by itself.
+
+An unknown key says to type `?`. The board prints the same list, plus its
+version and which pads A, B and C are on, when you type `?` (or `h`):
+
+| Key | Does |
+|-----|------|
+| **Status** | |
+| `?` | this help, starting with the buttons and their pads (also `h`) |
+| `i` | status: profile, IMU, filter, rates, per-stage frame and display timings, mic, knobs |
+| `p` | raw button levels (0 = pressed) and how GPIO43 is wired |
+| **Controls** | |
+| `w` | as a quick press of C: open or close the Status page |
+| `v` | Blade view on or off |
+| `c` | start Mounting Calibration (as holding C for 5 s) |
+| `k` | log the 8-Encoder unit's counts, pushes and switch as they change (again: stop) |
+| **Sound** | |
+| `m` | sound drives brightness, or not (as the 8-Encoder unit's switch) |
+| `l` | log the mic's level and Loudness 10 times a second (again: stop) |
+| **Motion** | |
+| `f` | next orientation filter (Mahony, Kalman) |
+| `a` | axis check, 5 times a second: which sensor axis sees gravity, where the Blade points (again: stop) |
+| `R` / `S` | start / stop streaming raw IMU samples as CSV (`tools/capture_imu.py`) |
+| **Performance** | |
+| `b` | Cloud Field micro-benchmark |
+| `z` | log a line every frame for 3 s; then `i` shows the worst loop, which should stay a few ms even with the port closed |
+
+### Versioning
+
+The firmware's version is in [VERSION](VERSION), as major.minor. **Every pull
+request raises it**, usually the minor number (0.1 to 0.2); the GitHub check
+*Version* fails a PR whose VERSION isn't above the base branch's. Two PRs open
+at once both start from the same number, so whichever merges second raises
+it again when it is rebased.
+
+The build compiles in the version and the git commit (`git describe`, with
+`-dirty` for uncommitted changes) through
+[tools/pio_version.py](tools/pio_version.py). The serial console shows them
+at boot and at the top of `?` and `i`, and IMU recordings carry `fw=` in their
+header:
+
+```
+# kalman-dong 0.1 (28604ac) ready; ? for help
+```
 
 ### Recording swings
 
@@ -124,6 +221,92 @@ uv run tools/capture_imu.py swing-figure8 --seconds 60
 
 Recordings land in `test/data/` and are replayed through the motion tracker by
 `pio test -e native -f test_replay`.
+
+## Orientation filters
+
+The Cloud Field is anchored by the Dong's orientation
+([ADR 0002](docs/adr/0002-orientation-only-anchoring.md)), so the orientation
+filter is what makes the clouds stay put in the air. It fuses the IMU's two
+sensors, read about 817 times a second:
+
+- the **gyro** is smooth and quick but drifts, and
+- the **accelerometer** knows which way is down, but only when the Dong
+  isn't being swung.
+
+A filter only does that fusion. [MotionTracker](lib/core/src/kd/motion_tracker.h)
+does the rest around it: it learns the gyro's bias whenever the Dong is at
+Rest and hands the filter bias-corrected rates, and it runs Ignition,
+Re-level, Travel and the look-ahead to when the Pixels light. With six axes
+nothing can correct **heading** (the turn around vertical): it drifts
+slowly, and shows as the clouds turning and in the ROT readout's turn
+number. A magnetometer would fix that
+([docs/research/imu-options.md](docs/research/imu-options.md)).
+
+| Filter | How it works | Cost per sample on the board |
+|---|---|---|
+| **Mahony** (default) | Integrates the gyro and nudges tilt toward the measured gravity: 2 gains (`kp` 1/s, `ki` 0.02/s²). Trusts gravity fully within 0.5 m/s² of 1 g and not at all beyond 2.5 m/s², so swing forces don't tip it. | ~100 µs |
+| **Kalman** | Error-state Kalman filter over orientation and the gyro bias MotionTracker hasn't caught. Trusts the accelerometer less the further it strays from 1 g, and skips readings too unlikely for its own uncertainty (innovation gate), which catches swings that pass through 1 g pointing nowhere near down. | ~200 µs |
+
+Both are in [kd/orientation_filter.h](lib/core/src/kd/orientation_filter.h).
+Each IMU sample has 1224 µs, of which the I²C read takes about 550.
+
+### Why Mahony
+
+On real hand-held recordings ([test/data/](test/data/README.md)) the two tie
+on tilt, but Mahony holds heading far better at rest:
+
+| Recording | Measure | Mahony | Kalman |
+|---|---|---|---|
+| still, 30 s | heading drift | **0.07°** | 1.0° |
+| slow sweeps | tilt error at quiet moments, mean | 4.6° | 4.5° |
+| fast swings | tilt error at quiet moments, mean | 1.1° | 0.95° |
+
+Differences under about half a degree of tilt are noise in this yardstick.
+Heading drift is the error a wielder actually sees (the clouds slowly turn),
+and nothing corrects it, so it decides. Mahony also costs half the CPU and
+has four settings to tune instead of nine.
+
+In simulation (`pio test -e native -f test_motion -v` prints the report) the
+Kalman filter holds tilt 13× better when the gyro bias shifts mid-swing, and
+somewhat better through big swings, but slightly worse under hand jitter.
+That bias shift is what a warming gyro does, so it is the case to revisit
+with a better IMU or a magnetometer.
+
+### Trying and adding filters
+
+- **Switch live:** serial `f` cycles the filters; `i` names the one running
+  and its cost (`imu us: ... track`).
+- **Change a build's default:** add `-DKD_FILTER=Kalman` to its
+  `build_flags` in [platformio.ini](platformio.ini).
+
+To add a filter:
+
+1. **Implement** `OrientationFilter`
+   ([kd/orientation_filter.h](lib/core/src/kd/orientation_filter.h)):
+   `name()`, `reset(orientation)`, `update(gyro, accel, dt)` and
+   `orientation()`. It gets body-frame rates in rad/s with MotionTracker's
+   bias already removed, and specific force in m/s² that reads +g upward at
+   rest; it returns body to world, Z up. Leave bias at Rest, Re-level and
+   heading reference to MotionTracker.
+2. **Register** it in [kd/filter_bank.h](lib/core/src/kd/filter_bank.h): a
+   member, an entry in the constructor's list, and one more in `kCount`.
+   It then shows up in `f`, in `-DKD_FILTER=`, and in the replay of every
+   recording.
+3. **Test** it: add its type to `FILTERS` in
+   [test/test_motion/test_main.cpp](test/test_motion/test_main.cpp), so every
+   motion test runs against it, and to `compare()` there, so the simulated
+   report shows it.
+4. **Compare** it:
+   - in simulation: `pio test -e native -f test_motion -v`;
+   - on real recordings: `uv run tools/bringup.py compare` (or
+     `pio test -e native -f test_replay -v`);
+   - on the board: `f` until it runs, then `i` for its cost, which has to
+     stay well inside the 1224 µs per sample.
+5. **To make it the default,** change `kDefaultFilter` in
+   [kd/filter_bank.h](lib/core/src/kd/filter_bank.h) and the test "Mahony is
+   the default filter" in
+   [test/test_filter_bank](test/test_filter_bank/test_main.cpp), and update
+   *Why Mahony* above.
 
 ## Bench testing with just the board
 
@@ -164,17 +347,7 @@ Steps can also run one at a time (`check`, `mount`, `record NAME`,
 pio run -e xiao_screen -t upload
 ```
 
-```bash
-pio device monitor -e xiao_screen
-```
-
-Serial commands: `i` status plus per-stage frame, IMU and display timings, `c`
-start Mounting Calibration, `f` switch orientation filter (Mahony / Kalman),
-`a` toggle axis check (5 Hz), `b` Cloud Field micro-benchmark, `v` toggle the
-Blade view, `R`/`S` start/stop raw IMU streaming, `z` log a line every frame
-for 3 s (then `i` shows the worst loop, which should stay a few ms even with
-the port closed), `m` sound drives brightness or not, `l` log the
-microphone's level and Loudness 10 times a second.
+Then open the [serial console](#serial-console) and type `?`.
 
 1. **Boot and IMU.** The Blade view comes up right away (C shows the Status page). `i`
    should name the chip (LSM6DS3 / LSM6DS3TR-C / LSM6DSO) and report about
@@ -238,21 +411,9 @@ Hardware lessons so far:
 - Real gyro noise is ~0.03 rad/s sample to sample; Rest detection works on
   smoothed readings (see `test/data/bench-desk-20s.csv`).
 
-Two orientation filters sit behind one interface: Mahony (default) and an
-error-state Kalman filter with innovation gating; `f` cycles them live, and
-`-DKD_FILTER=Kalman` in a build's `build_flags` makes another the default.
-[kd/filter_bank.h](lib/core/src/kd/filter_bank.h) lists them and says how to
-add one. In
-simulation the Kalman filter holds tilt 13x better when the gyro bias shifts
-mid-swing and somewhat better through big swings, and is slightly worse
-under hand jitter (`pio test -e native -f test_motion -v` prints the
-comparison). On real hand-held recordings (`test/data/bench-*`) they tie on
-tilt (about 1 deg in fast swings, 4.5 deg in slow sweeps, at quiet moments
-mid-motion), while Mahony holds heading better at rest (0.07 vs 1.0 deg over
-30 s) at half the CPU, so Mahony stays the default.
-
 IMU cost per sample on the board (budget 1224 us at 817 Hz): I2C read ~550
-us, tracking ~100 us with Mahony and ~200 us with Kalman.
+us, tracking ~100 us with Mahony and ~200 us with Kalman (see
+[Orientation filters](#orientation-filters)).
 
 Still to check, on a real strip: LED colors, signal quality at 4 MHz
 without a level shifter (the 1 m prototype), and current draw.

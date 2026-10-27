@@ -128,6 +128,7 @@ Settings expectedSettings(const Script& sc, const Settings& start) {
             case Setting::Motion: step(s.motion); break;
             case Setting::Brightness: step(s.brightness); break;
             case Setting::Girth: step(s.girth); break;
+            case Setting::QuietGlow: step(s.quietGlow); break;  // a knob's, never a button's
             case Setting::None: break;
         }
     }

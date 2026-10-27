@@ -211,13 +211,15 @@ void drawStatus(const Status& s) {
     statusLine(8, buf, true, 1);
     snprintf(buf, sizeof(buf), "%.0ffps %.0fHz", s.fps, s.imuHz);
     statusLine(9, buf, false);
-    if (!s.micOk)
+    if (s.changed == Setting::QuietGlow)
+        snprintf(buf, sizeof(buf), "Quiet glow %d%%", int(s.settings.quietGlowValue() * 100 + 0.5f));
+    else if (!s.micOk)
         snprintf(buf, sizeof(buf), "No mic");
     else if (!s.soundOn)
         snprintf(buf, sizeof(buf), "Sound off");
     else
         snprintf(buf, sizeof(buf), "Sound %3d%%", int(s.loudness * 100 + 0.5f));
-    statusLine(10, buf, false);
+    statusLine(10, buf, s.changed == Setting::QuietGlow);
 
     drawSegments(4, 6 + 8 * kLineHeight + 10, s.holdSegments);
     snprintf(buf, sizeof(buf), "%s %s%s", s.profile, s.imuChip, s.recording ? " REC" : (s.atRest ? " rest" : ""));

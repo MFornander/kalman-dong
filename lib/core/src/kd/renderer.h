@@ -41,7 +41,6 @@ public:
     static constexpr float kRestDimRamp = 3.f;       // s to reach the dimmed level
     static constexpr float kRestDimLevel = 0.2f;
     static constexpr float kWarningShare = 0.15f;    // share of each Line, from the Hilt, that pulses red
-    static constexpr float kQuietLevel = 0.15f;      // brightness left in silence when sound drives it
 
     explicit Renderer(const DongProfile& profile);
 

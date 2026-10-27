@@ -1,4 +1,5 @@
-// The wielder's settings and the three buttons that change them.
+// The wielder's settings and the three buttons that change them. The knobs of
+// an 8-Encoder unit change them too (kd/knob_panel.h).
 //
 // Every button has three presses: Quick (let go before 2 s), Long (let go
 // between 2 and 5 s) and Held (reaches 5 s; acts then, and letting go
@@ -23,19 +24,21 @@ struct Settings {
     uint8_t clearSky = 1;
     uint8_t motion = 0;     // cloud motion: frozen, then 1x and 2x speed
     uint8_t cloudSize = 1;  // 0.6 m
+    uint8_t quietGlow = 1;  // 15%
 
     float brightnessValue() const;  // 0..1
     float motionValue() const;      // how fast the Cloud Field moves: 0 frozen, 1 normal
     float cloudSizeValue() const;   // m; typical size of one cloud
     float girthValue() const;       // m
     float clearSkyValue() const;    // 0..1 share of the Cloud Field
+    float quietGlowValue() const;   // 0..1 brightness left in silence while sound drives it
 
     // Clamps every field into range (e.g. after loading from flash).
     void sanitize();
 
     bool operator==(const Settings& o) const {
         return palette == o.palette && brightness == o.brightness && girth == o.girth && clearSky == o.clearSky &&
-               motion == o.motion && cloudSize == o.cloudSize;
+               motion == o.motion && cloudSize == o.cloudSize && quietGlow == o.quietGlow;
     }
 };
 
@@ -68,19 +71,23 @@ private:
     bool held_ = false;
 };
 
-enum class Setting : uint8_t { None, Palette, ClearSky, Brightness, Girth, Motion, CloudSize };
+enum class Setting : uint8_t { None, Palette, ClearSky, Brightness, Girth, Motion, CloudSize, QuietGlow };
 
 struct ControlEvent {
-    enum class Kind : uint8_t { None, Changed, WakeDisplay, Relevel, CalibrateMounting };
+    enum class Kind : uint8_t { None, Changed, WakeDisplay, Relevel, CalibrateMounting, SoundOn, SoundOff };
     Kind kind = Kind::None;
     Setting changed = Setting::None;
 };
 
-// What one update did: at most one event per button.
+// What one update did: at most one event per button or knob.
 struct ControlEvents {
-    ControlEvent events[3];
+    static constexpr int kMax = 8;
+    ControlEvent events[kMax];
     int count = 0;
 
+    void add(const ControlEvent& e) {
+        if (e.kind != ControlEvent::Kind::None && count < kMax) events[count++] = e;
+    }
     const ControlEvent* begin() const { return events; }
     const ControlEvent* end() const { return events + count; }
 };
@@ -110,8 +117,19 @@ public:
     PressInProgress pressInProgress(uint32_t nowMs) const;
     void markSaved() { dirty_ = false; }
 
+    // What a press of button A, B or C does, wherever the press came from.
+    ControlEvent press(Button b, ButtonTracker::Press p, uint32_t nowMs);
+
+    // Moves a setting `steps` along its table, stopping at the ends (the
+    // Palette wraps around instead). Reports the setting even when it is
+    // already at the end, so the wielder sees why nothing changed.
+    ControlEvent turn(Setting s, int steps, uint32_t nowMs);
+
+    // Puts a setting back to its default.
+    ControlEvent restore(Setting s, uint32_t nowMs);
+
 private:
-    ControlEvent apply(Button b, ButtonTracker::Press p, uint32_t nowMs);
+    void changed(uint32_t nowMs);
 
     Settings& settings_;
     ButtonTracker buttons_[3];

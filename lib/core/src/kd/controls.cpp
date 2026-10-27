@@ -11,11 +11,28 @@ const float kGirthSteps[] = {0.f, 0.1f, 0.2f, 0.4f};
 const float kClearSkySteps[] = {0.f, 0.15f, 0.3f, 0.5f};
 const float kMotionSteps[] = {0.f, 1.f, 2.f};
 const float kCloudSizeSteps[] = {0.3f, 0.6f, 1.2f, 2.4f};
+const float kQuietGlowSteps[] = {0.05f, 0.15f, 0.3f, 0.5f, 0.75f};
 
 template <typename T, unsigned N>
 constexpr unsigned count(const T (&)[N]) { return N; }
 
 uint8_t next(uint8_t v, unsigned n) { return static_cast<uint8_t>((v + 1) % n); }
+
+// The field holding a setting, and how many steps its table has.
+uint8_t* field(Settings& s, Setting which, unsigned& steps) {
+    switch (which) {
+        case Setting::Palette: steps = static_cast<unsigned>(paletteCount()); return &s.palette;
+        case Setting::ClearSky: steps = count(kClearSkySteps); return &s.clearSky;
+        case Setting::Brightness: steps = count(kBrightnessSteps); return &s.brightness;
+        case Setting::Girth: steps = count(kGirthSteps); return &s.girth;
+        case Setting::Motion: steps = count(kMotionSteps); return &s.motion;
+        case Setting::CloudSize: steps = count(kCloudSizeSteps); return &s.cloudSize;
+        case Setting::QuietGlow: steps = count(kQuietGlowSteps); return &s.quietGlow;
+        case Setting::None: break;
+    }
+    steps = 0;
+    return nullptr;
+}
 
 }  // namespace
 
@@ -24,6 +41,7 @@ float Settings::girthValue() const { return kGirthSteps[girth % count(kGirthStep
 float Settings::clearSkyValue() const { return kClearSkySteps[clearSky % count(kClearSkySteps)]; }
 float Settings::motionValue() const { return kMotionSteps[motion % count(kMotionSteps)]; }
 float Settings::cloudSizeValue() const { return kCloudSizeSteps[cloudSize % count(kCloudSizeSteps)]; }
+float Settings::quietGlowValue() const { return kQuietGlowSteps[quietGlow % count(kQuietGlowSteps)]; }
 
 void Settings::sanitize() {
     palette %= paletteCount();
@@ -32,6 +50,7 @@ void Settings::sanitize() {
     clearSky %= count(kClearSkySteps);
     motion %= count(kMotionSteps);
     cloudSize %= count(kCloudSizeSteps);
+    quietGlow %= count(kQuietGlowSteps);
 }
 
 ButtonTracker::Press ButtonTracker::update(bool down, uint32_t nowMs) {
@@ -73,8 +92,7 @@ ControlEvents Controls::update(bool aDown, bool bDown, bool cDown, uint32_t nowM
     for (int i = 0; i < 3; ++i) {
         const ButtonTracker::Press p = buttons_[i].update(down[i], nowMs);
         if (p == ButtonTracker::Press::None) continue;
-        const ControlEvent e = apply(static_cast<Button>(i), p, nowMs);
-        if (e.kind != ControlEvent::Kind::None) result.events[result.count++] = e;
+        result.add(press(static_cast<Button>(i), p, nowMs));
     }
     return result;
 }
@@ -94,7 +112,42 @@ Controls::PressInProgress Controls::pressInProgress(uint32_t nowMs) const {
     return p;
 }
 
-ControlEvent Controls::apply(Button b, ButtonTracker::Press p, uint32_t nowMs) {
+void Controls::changed(uint32_t nowMs) {
+    dirty_ = true;
+    lastChangeMs_ = nowMs;
+}
+
+ControlEvent Controls::turn(Setting s, int steps, uint32_t nowMs) {
+    unsigned n = 0;
+    uint8_t* v = field(settings_, s, n);
+    if (!v || steps == 0) return {};
+    int to = *v + steps;
+    if (s == Setting::Palette)
+        to = ((to % int(n)) + int(n)) % int(n);
+    else
+        to = to < 0 ? 0 : (to >= int(n) ? int(n) - 1 : to);
+    if (to != *v) {
+        *v = static_cast<uint8_t>(to);
+        changed(nowMs);
+    }
+    return {ControlEvent::Kind::Changed, s};
+}
+
+ControlEvent Controls::restore(Setting s, uint32_t nowMs) {
+    unsigned n = 0;
+    uint8_t* v = field(settings_, s, n);
+    if (!v) return {};
+    Settings defaults;
+    const uint8_t to = *field(defaults, s, n);
+    if (to != *v) {
+        *v = to;
+        changed(nowMs);
+    }
+    return {ControlEvent::Kind::Changed, s};
+}
+
+ControlEvent Controls::press(Button b, ButtonTracker::Press p, uint32_t nowMs) {
+    if (p == ButtonTracker::Press::None) return {};
     if (p == ButtonTracker::Press::Held) {
         if (b == Button::C) return {ControlEvent::Kind::CalibrateMounting, Setting::None};
     }
@@ -128,8 +181,7 @@ ControlEvent Controls::apply(Button b, ButtonTracker::Press p, uint32_t nowMs) {
         case Button::C:
             return {isLong ? ControlEvent::Kind::Relevel : ControlEvent::Kind::WakeDisplay, Setting::None};
     }
-    dirty_ = true;
-    lastChangeMs_ = nowMs;
+    changed(nowMs);
     return e;
 }
 

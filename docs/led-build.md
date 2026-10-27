@@ -11,7 +11,14 @@ The first Dong keeps it simple: a 1 m Blade, no level shifter, power fed only
 at the Hilt, and a two-port USB power bank. The full build (below) adds the
 level shifter and power at both ends of every Line, which a 2 m Blade needs.
 
-![1 m prototype: a two-port power bank powers the board through USB-C and a 5 V and GND bus at the Hilt, which feeds the Hilt end of every Line; pads D11 and D12 drive DATA and CLOCK of Line 0 directly](media/led-wiring-proto.svg)
+![1 m prototype: a two-port power bank powers the board through USB-C and a 5 V and GND bus at the Hilt, which feeds the Hilt end of every Line; pads D11 and D12 drive DATA and CLOCK of Line 0 directly; short four-wire folds join Line 0 to 1 at the tip, 1 to 2 at the Hilt and 2 to 3 at the tip, making one strip](media/led-wiring-proto.svg)
+
+The four Lines are one strip, cut into four 60-Pixel pieces and joined back
+up with **folds**: four short wires (5 V, GND, DATA, CLOCK) from the end of
+one Line to the start of the next, as the strip was before it was cut. Line
+0's tip end joins Line 1's, Line 1's Hilt end joins Line 2's, and Line 2's
+tip end joins Line 3's. Follow the arrows on the strip (DI/CI in, DO/CO
+out). This is the single folded Strand the `xiao` profile expects.
 
 ### Where each wire goes on the carrier
 
@@ -42,11 +49,14 @@ board; only DATA, CLOCK and GND do.
   capacitor across it.
 - From the bus, a 5 V and GND jumper pair goes to the **Hilt end of every
   Line**: the start of Lines 0 and 2, the end of Lines 1 and 3. Nothing is
-  fed at the tip; the tip folds carry DATA and CLOCK only.
+  fed at the tip; the folds there just join neighbouring Lines.
 - Set the profile's `power.budgetMilliamps` to port 2's rating (the `xiao`
   profile assumes 3 A; many ports give 2.4 A). At 3 A each Line draws at most
   about 0.75 A, so a 1 m Line fed from one end dims by only a few tenths of a
   volt at the tip.
+- The **1000 µF capacitor** is the only one this build needs. It soaks up
+  the surge when the Pixels switch on and the power bank's slow response.
+  Mind its polarity: the stripe goes to GND.
 - Bus 20 AWG; jumpers 22 AWG.
 - To flash, unplug port 1 and plug the computer in its place; the Pixels can
   stay on port 2.
@@ -58,6 +68,10 @@ board to the first Pixel carries 3.3 V. That is below the 3.5 V an SK9822
 wants for a "high" at 5 V, but works on a short wire at a low clock: the `xiao`
 profile clocks the Pixels at 4 MHz (`LED_DATA_MHZ`), which is plenty for
 240 Pixels.
+
+The full build's 33 Ω resistors (in series on DATA and CLOCK) damp ringing
+on the long wires after its level shifter. With under 10 cm from the board
+to the first Pixel the prototype leaves them out.
 
 If the first Pixels flicker or show wrong colors, add a **sacrificial Pixel**
 instead of a level shifter: cut one Pixel off the strip, power it through an
@@ -101,6 +115,10 @@ Small I²C sensors can share it:
   board has no free analog pin for it.
 - **Ambient light sensor** (e.g. VEML7700): dim the Blade automatically in
   the dark, saving battery.
+- **Knobs**: an M5Stack 8-Encoder unit (address 0x41) gives every setting its
+  own knob; the firmware already supports it (README, *Knobs*). Plug it
+  straight in. It wants 5 V but runs from Grove's 3.3 V: its regulator only
+  feeds a 3.3 V rail, and with its LEDs off it draws about 20 mA.
 
 Each needs firmware work: the IMU keeps the bus about half busy, so other
 devices must be read from the IMU task between its samples. Their I²C

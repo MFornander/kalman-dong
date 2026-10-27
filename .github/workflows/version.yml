@@ -1,0 +1,36 @@
+# Every pull request raises VERSION above the one on the branch it merges
+# into (README, Versioning).
+name: Version
+
+on:
+  pull_request:
+
+jobs:
+  bumped:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: VERSION is higher than on the base branch
+        env:
+          BASE: ${{ github.event.pull_request.base.ref }}
+        run: |
+          python3 - <<'PY'
+          import os, subprocess, sys
+
+          def parse(text):
+              return tuple(int(p) for p in text.strip().split("."))
+
+          head = open("VERSION").read().strip()
+          try:
+              base = subprocess.run(["git", "show", f"origin/{os.environ['BASE']}:VERSION"],
+                                    capture_output=True, text=True, check=True).stdout.strip()
+          except subprocess.CalledProcessError:
+              print(f"VERSION {head}; the base branch has none yet")
+              sys.exit(0)
+          if parse(head) <= parse(base):
+              print(f"::error file=VERSION::VERSION is {head}; raise it above {base} (the base branch's)")
+              sys.exit(1)
+          print(f"VERSION {base} -> {head}")
+          PY
