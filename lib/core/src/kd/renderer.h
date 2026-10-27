@@ -27,7 +27,7 @@ struct FrameInput {
     Pose pose;                     // already predicted to when the Pixels light
     float ignitionProgress = 1.f;  // 0..1
     float sinceIgnition = 1e9f;    // s since Ignition finished
-    float restSeconds = 0.f;       // s at Rest; 0 while moving
+    float restSeconds = 0.f;       // s lying down (MotionTracker::restSeconds()); 0 once picked up
     float batteryFraction = -1.f;  // 0..1, negative if unknown
     float loudness = -1.f;         // 0..1 (kd/loudness.h); negative: sound doesn't change brightness
     CalibrationView calibration;

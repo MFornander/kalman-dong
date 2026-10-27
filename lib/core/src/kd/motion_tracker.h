@@ -26,6 +26,11 @@ struct MotionSettings {
     float restMaxBiasStep = 0.03f; // rad/s; larger steady rates are real turning, not bias
     float restHold = 0.5f;         // s
     float biasTimeConstant = 2.0f; // s; how fast bias is re-learned at Rest
+    // Once at Rest, the Dong counts as lying down (and its Rest time keeps
+    // running) until it is picked up: turned `pickUpTurn` from where it lay,
+    // or moving for `pickUpMoving` s in all. A bump of the table does neither.
+    float pickUpTurn = 0.35f;      // rad, about 20 degrees
+    float pickUpMoving = 2.0f;     // s
 
     // Ignition finishes after `ignitionStill` s of Rest, or after
     // `ignitionTimeout` s regardless (falling back to the saved bias).
@@ -65,7 +70,10 @@ public:
     bool ignited() const { return ignited_; }
 
     bool atRest() const { return stillness_.stillTime() >= settings_.restHold; }
-    float restSeconds() const { return atRest() ? stillness_.stillTime() - settings_.restHold : 0.f; }
+    // Lying down: at Rest, and not picked up since (see MotionSettings::pickUpTurn).
+    bool lying() const { return lying_; }
+    // Seconds lying down; 0 once picked up.
+    float restSeconds() const { return lying_ ? lyingTime_ : 0.f; }
 
     // Make the current heading the Cloud Field's reference heading, and bring
     // the Dong back to the field's origin (clearing Travel and Push).
@@ -93,6 +101,7 @@ public:
 
 private:
     void ignite(const Vec3& accel);
+    void updateLying(float dt);
     void updateDisplacement(const Vec3& accel, const Vec3& rate, float dt);
     void endStroke(bool keep);
     void clearDisplacement();
@@ -109,6 +118,10 @@ private:
 
     Stillness stillness_;
     float learnedThisRest_ = 0;  // s of bias learning in the current Rest
+    bool lying_ = false;
+    float lyingTime_ = 0;        // s
+    float movingTime_ = 0;       // s moving since last at Rest
+    Quat layAt_;                 // filter orientation while at Rest
 
     Quat reference_;     // heading reference set by Re-level
     Quat zero_;          // see zeroOrientation()

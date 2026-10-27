@@ -63,18 +63,20 @@ ButtonTracker::Press ButtonTracker::update(bool down, uint32_t nowMs) {
         if (stable_) {
             pressedAtMs_ = rawSinceMs_;
             held_ = false;
-        } else if (!held_) {
-            out = rawSinceMs_ - pressedAtMs_ >= kLongMs ? Press::Long : Press::Quick;
+        } else {
+            if (!held_ && !cancelled_) out = rawSinceMs_ - pressedAtMs_ >= kLongMs ? Press::Long : Press::Quick;
+            cancelled_ = false;
         }
     }
     if (down != raw_) {
         raw_ = down;
         rawSinceMs_ = nowMs;
     }
+    if (!raw_ && !stable_) cancelled_ = false;  // a cancelled bounce leaves nothing behind
     // Held once the press has lasted kHeldMs, counting only the time it is
     // known to have been down (not past a release still being debounced).
     const uint32_t downUntilMs = raw_ ? nowMs : rawSinceMs_;
-    if (stable_ && !held_ && downUntilMs - pressedAtMs_ >= kHeldMs) {
+    if (stable_ && !held_ && !cancelled_ && downUntilMs - pressedAtMs_ >= kHeldMs) {
         held_ = true;
         out = Press::Held;
     }

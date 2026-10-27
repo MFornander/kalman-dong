@@ -81,7 +81,7 @@ The wielder's action of declaring the Dong's current heading as the reference fo
 _Avoid_: Calibrate, reset, recenter, zero
 
 **Rest**:
-The Dong being held or laid still; used to quietly re-learn sensor drift, and after long enough, to dim the Pixels until the next motion.
+The Dong being held or laid still; used to quietly re-learn sensor drift, and after long enough, to dim the Pixels and turn off the screen until the Dong is picked up: turned about 20 degrees or carried for a couple of seconds. A bump of the table doesn't count.
 _Avoid_: Idle, sleep, standby
 
 **Loudness**:

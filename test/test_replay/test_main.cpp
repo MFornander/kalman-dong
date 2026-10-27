@@ -64,6 +64,7 @@ ReplayResult replay(const std::vector<Row>& rows, OrientationFilter& filter) {
     double t = 0;
     bool haveHeading = false;
     float heading0 = 0;
+    float stillFor = 0;  // s at Rest without a break (restSeconds() runs on through bumps)
     auto heading = [](const Quat& q) {
         Vec3 f = q.rotate({1, 0, 0});
         return std::atan2(f.y, f.x);
@@ -100,7 +101,8 @@ ReplayResult replay(const std::vector<Row>& rows, OrientationFilter& filter) {
         result.worstTravel = std::fmax(result.worstTravel, tracker.travel().norm());
         result.worstShift = std::fmax(result.worstShift, p.displacement.norm());
         result.finalTravel = tracker.travel().norm();
-        if (tracker.ignited() && tracker.restSeconds() > 1.f) {
+        stillFor = tracker.atRest() ? stillFor + s.dt : 0.f;
+        if (tracker.ignited() && stillFor > 1.f) {
             Vec3 upEstimate = p.orientation.conj().rotate({0, 0, 1});
             float err = radToDeg(std::acos(clampf(upEstimate.dot(s.accel.normalized()), -1.f, 1.f)));
             result.worstRestTiltDeg = std::fmax(result.worstRestTiltDeg, err);
