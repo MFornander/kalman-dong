@@ -215,6 +215,92 @@ uv run tools/capture_imu.py swing-figure8 --seconds 60
 Recordings land in `test/data/` and are replayed through the motion tracker by
 `pio test -e native -f test_replay`.
 
+## Orientation filters
+
+The Cloud Field is anchored by the Dong's orientation
+([ADR 0002](docs/adr/0002-orientation-only-anchoring.md)), so the orientation
+filter is what makes the clouds stay put in the air. It fuses the IMU's two
+sensors, read about 817 times a second:
+
+- the **gyro** is smooth and quick but drifts, and
+- the **accelerometer** knows which way is down, but only when the Dong
+  isn't being swung.
+
+A filter only does that fusion. [MotionTracker](lib/core/src/kd/motion_tracker.h)
+does the rest around it: it learns the gyro's bias whenever the Dong is at
+Rest and hands the filter bias-corrected rates, and it runs Ignition,
+Re-level, Travel and the look-ahead to when the Pixels light. With six axes
+nothing can correct **heading** (the turn around vertical): it drifts
+slowly, and shows as the clouds turning and in the ROT readout's turn
+number. A magnetometer would fix that
+([docs/research/imu-options.md](docs/research/imu-options.md)).
+
+| Filter | How it works | Cost per sample on the board |
+|---|---|---|
+| **Mahony** (default) | Integrates the gyro and nudges tilt toward the measured gravity: 2 gains (`kp` 1/s, `ki` 0.02/s²). Trusts gravity fully within 0.5 m/s² of 1 g and not at all beyond 2.5 m/s², so swing forces don't tip it. | ~100 µs |
+| **Kalman** | Error-state Kalman filter over orientation and the gyro bias MotionTracker hasn't caught. Trusts the accelerometer less the further it strays from 1 g, and skips readings too unlikely for its own uncertainty (innovation gate), which catches swings that pass through 1 g pointing nowhere near down. | ~200 µs |
+
+Both are in [kd/orientation_filter.h](lib/core/src/kd/orientation_filter.h).
+Each IMU sample has 1224 µs, of which the I²C read takes about 550.
+
+### Why Mahony
+
+On real hand-held recordings ([test/data/](test/data/README.md)) the two tie
+on tilt, but Mahony holds heading far better at rest:
+
+| Recording | Measure | Mahony | Kalman |
+|---|---|---|---|
+| still, 30 s | heading drift | **0.07°** | 1.0° |
+| slow sweeps | tilt error at quiet moments, mean | 4.6° | 4.5° |
+| fast swings | tilt error at quiet moments, mean | 1.1° | 0.95° |
+
+Differences under about half a degree of tilt are noise in this yardstick.
+Heading drift is the error a wielder actually sees (the clouds slowly turn),
+and nothing corrects it, so it decides. Mahony also costs half the CPU and
+has four settings to tune instead of nine.
+
+In simulation (`pio test -e native -f test_motion -v` prints the report) the
+Kalman filter holds tilt 13× better when the gyro bias shifts mid-swing, and
+somewhat better through big swings, but slightly worse under hand jitter.
+That bias shift is what a warming gyro does, so it is the case to revisit
+with a better IMU or a magnetometer.
+
+### Trying and adding filters
+
+- **Switch live:** serial `f` cycles the filters; `i` names the one running
+  and its cost (`imu us: ... track`).
+- **Change a build's default:** add `-DKD_FILTER=Kalman` to its
+  `build_flags` in [platformio.ini](platformio.ini).
+
+To add a filter:
+
+1. **Implement** `OrientationFilter`
+   ([kd/orientation_filter.h](lib/core/src/kd/orientation_filter.h)):
+   `name()`, `reset(orientation)`, `update(gyro, accel, dt)` and
+   `orientation()`. It gets body-frame rates in rad/s with MotionTracker's
+   bias already removed, and specific force in m/s² that reads +g upward at
+   rest; it returns body to world, Z up. Leave bias at Rest, Re-level and
+   heading reference to MotionTracker.
+2. **Register** it in [kd/filter_bank.h](lib/core/src/kd/filter_bank.h): a
+   member, an entry in the constructor's list, and one more in `kCount`.
+   It then shows up in `f`, in `-DKD_FILTER=`, and in the replay of every
+   recording.
+3. **Test** it: add its type to `FILTERS` in
+   [test/test_motion/test_main.cpp](test/test_motion/test_main.cpp), so every
+   motion test runs against it, and to `compare()` there, so the simulated
+   report shows it.
+4. **Compare** it:
+   - in simulation: `pio test -e native -f test_motion -v`;
+   - on real recordings: `uv run tools/bringup.py compare` (or
+     `pio test -e native -f test_replay -v`);
+   - on the board: `f` until it runs, then `i` for its cost, which has to
+     stay well inside the 1224 µs per sample.
+5. **To make it the default,** change `kDefaultFilter` in
+   [kd/filter_bank.h](lib/core/src/kd/filter_bank.h) and the test "Mahony is
+   the default filter" in
+   [test/test_filter_bank](test/test_filter_bank/test_main.cpp), and update
+   *Why Mahony* above.
+
 ## Bench testing with just the board
 
 The `xiao_screen` build draws the four Lines on the display (landscape: Hilt
@@ -318,21 +404,9 @@ Hardware lessons so far:
 - Real gyro noise is ~0.03 rad/s sample to sample; Rest detection works on
   smoothed readings (see `test/data/bench-desk-20s.csv`).
 
-Two orientation filters sit behind one interface: Mahony (default) and an
-error-state Kalman filter with innovation gating; `f` cycles them live, and
-`-DKD_FILTER=Kalman` in a build's `build_flags` makes another the default.
-[kd/filter_bank.h](lib/core/src/kd/filter_bank.h) lists them and says how to
-add one. In
-simulation the Kalman filter holds tilt 13x better when the gyro bias shifts
-mid-swing and somewhat better through big swings, and is slightly worse
-under hand jitter (`pio test -e native -f test_motion -v` prints the
-comparison). On real hand-held recordings (`test/data/bench-*`) they tie on
-tilt (about 1 deg in fast swings, 4.5 deg in slow sweeps, at quiet moments
-mid-motion), while Mahony holds heading better at rest (0.07 vs 1.0 deg over
-30 s) at half the CPU, so Mahony stays the default.
-
 IMU cost per sample on the board (budget 1224 us at 817 Hz): I2C read ~550
-us, tracking ~100 us with Mahony and ~200 us with Kalman.
+us, tracking ~100 us with Mahony and ~200 us with Kalman (see
+[Orientation filters](#orientation-filters)).
 
 Still to check, on a real strip: LED colors, signal quality at 4 MHz
 without a level shifter (the 1 m prototype), and current draw.
