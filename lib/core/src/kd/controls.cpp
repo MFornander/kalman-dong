@@ -11,6 +11,7 @@ const float kGirthSteps[] = {0.f, 0.1f, 0.2f, 0.4f};
 const float kClearSkySteps[] = {0.f, 0.15f, 0.3f, 0.5f};
 const float kMotionSteps[] = {0.f, 1.f, 2.f};
 const float kCloudSizeSteps[] = {0.3f, 0.6f, 1.2f, 2.4f};
+const float kQuietGlowSteps[] = {0.05f, 0.15f, 0.3f, 0.5f, 0.75f};
 
 template <typename T, unsigned N>
 constexpr unsigned count(const T (&)[N]) { return N; }
@@ -26,6 +27,7 @@ uint8_t* field(Settings& s, Setting which, unsigned& steps) {
         case Setting::Girth: steps = count(kGirthSteps); return &s.girth;
         case Setting::Motion: steps = count(kMotionSteps); return &s.motion;
         case Setting::CloudSize: steps = count(kCloudSizeSteps); return &s.cloudSize;
+        case Setting::QuietGlow: steps = count(kQuietGlowSteps); return &s.quietGlow;
         case Setting::None: break;
     }
     steps = 0;
@@ -39,6 +41,7 @@ float Settings::girthValue() const { return kGirthSteps[girth % count(kGirthStep
 float Settings::clearSkyValue() const { return kClearSkySteps[clearSky % count(kClearSkySteps)]; }
 float Settings::motionValue() const { return kMotionSteps[motion % count(kMotionSteps)]; }
 float Settings::cloudSizeValue() const { return kCloudSizeSteps[cloudSize % count(kCloudSizeSteps)]; }
+float Settings::quietGlowValue() const { return kQuietGlowSteps[quietGlow % count(kQuietGlowSteps)]; }
 
 void Settings::sanitize() {
     palette %= paletteCount();
@@ -47,6 +50,7 @@ void Settings::sanitize() {
     clearSky %= count(kClearSkySteps);
     motion %= count(kMotionSteps);
     cloudSize %= count(kCloudSizeSteps);
+    quietGlow %= count(kQuietGlowSteps);
 }
 
 ButtonTracker::Press ButtonTracker::update(bool down, uint32_t nowMs) {

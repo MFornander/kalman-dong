@@ -104,7 +104,7 @@ kd::LoudnessMeter loudnessMeter(kMicRate);
 volatile float loudness = 0.f;
 volatile float micDb = -90.f, micQuietDb = -90.f, micLoudDb = -70.f;
 volatile float micUs = 0.f;  // smoothed time to measure one block
-bool soundOn = true;         // Loudness drives brightness; serial 'm' toggles
+bool soundOn = true;         // Loudness drives brightness; serial 'm' or the 8-Encoder unit's switch
 bool printSound = false;     // serial 'l'
 
 // Rendering.
@@ -346,7 +346,7 @@ void printHelp() {
         "#   A    next Palette   cloud size   step Clear Sky\n"
         "#   B    cloud motion   brightness   step Girth\n"
         "#   C    Status page    Re-level     Mounting Calibration\n"
-        "#   An 8-Encoder unit's knob 8 pushes like C (README, Knobs).\n"
+        "#   An 8-Encoder unit's knob 8 pushes like C, and its switch turns sound on and off (README, Knobs).\n"
         "#\n",
         kVersion, kCommit, profile.name, padName(kButtonA), padName(kButtonB), padName(kButtonC));
     Serial.print(
@@ -364,7 +364,7 @@ void printHelp() {
         "#   k  log the 8-Encoder unit's counts, pushes and switch as they change (again: stop)\n"
         "#\n"
         "# Sound\n"
-        "#   m  sound drives brightness, or not\n"
+        "#   m  sound drives brightness, or not (as the 8-Encoder unit's switch)\n"
         "#   l  log the mic's level and Loudness 10 times a second (again: stop)\n"
         "#\n"
         "# Motion\n"
@@ -672,9 +672,10 @@ void loop() {
     }
 
     auto onControl = [&](const kd::ControlEvent& e) {
-        static const char* const kKinds[] = {"none", "changed", "wake display", "re-level", "calibrate mounting"};
+        static const char* const kKinds[] = {"none",     "changed",            "wake display", "re-level",
+                                             "calibrate mounting", "sound on", "sound off"};
         static const char* const kSettings[] = {"",      "Palette",      "Clear Sky",  "brightness",
-                                                "Girth", "cloud motion", "cloud size"};
+                                                "Girth", "cloud motion", "cloud size", "quiet glow"};
         lastActiveMs = nowMs;
         Serial.printf("# control at %lu ms: %s %s -> palette %s, brightness %.0f%%, girth %.2f m, clear sky %.0f%%\n",
                       (unsigned long)nowMs, kKinds[static_cast<int>(e.kind)], kSettings[static_cast<int>(e.changed)],
@@ -687,6 +688,8 @@ void loop() {
             xSemaphoreGive(trackerLock);
         }
         if (e.kind == kd::ControlEvent::Kind::CalibrateMounting) startCalibration();
+        if (e.kind == kd::ControlEvent::Kind::SoundOn || e.kind == kd::ControlEvent::Kind::SoundOff)
+            soundOn = e.kind == kd::ControlEvent::Kind::SoundOn;  // the 8-Encoder unit's switch
         // In the Blade view a change shows in the header and the bars stay in
         // sight; only C's short press (its job) opens the Status page.
         if (status_display::bladeView() && e.kind != kd::ControlEvent::Kind::WakeDisplay) {
@@ -710,8 +713,15 @@ void loop() {
                 case kd::Setting::CloudSize:
                     snprintf(banner, sizeof(banner), "Cloud size\n%.1f m", settings.cloudSizeValue());
                     break;
+                case kd::Setting::QuietGlow:
+                    snprintf(banner, sizeof(banner), "Quiet glow\n%.0f%%", settings.quietGlowValue() * 100);
+                    break;
                 case kd::Setting::None:
-                    snprintf(banner, sizeof(banner), "%s", e.kind == kd::ControlEvent::Kind::Relevel ? "Re-leveled" : "");
+                    snprintf(banner, sizeof(banner), "%s",
+                             e.kind == kd::ControlEvent::Kind::Relevel    ? "Re-leveled"
+                             : e.kind == kd::ControlEvent::Kind::SoundOn  ? "Sound\non"
+                             : e.kind == kd::ControlEvent::Kind::SoundOff ? "Sound\noff"
+                                                                          : "");
                     break;
             }
             bannerUntilMs = nowMs + 2000;

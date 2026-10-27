@@ -24,19 +24,21 @@ struct Settings {
     uint8_t clearSky = 1;
     uint8_t motion = 0;     // cloud motion: frozen, then 1x and 2x speed
     uint8_t cloudSize = 1;  // 0.6 m
+    uint8_t quietGlow = 1;  // 15%
 
     float brightnessValue() const;  // 0..1
     float motionValue() const;      // how fast the Cloud Field moves: 0 frozen, 1 normal
     float cloudSizeValue() const;   // m; typical size of one cloud
     float girthValue() const;       // m
     float clearSkyValue() const;    // 0..1 share of the Cloud Field
+    float quietGlowValue() const;   // 0..1 brightness left in silence while sound drives it
 
     // Clamps every field into range (e.g. after loading from flash).
     void sanitize();
 
     bool operator==(const Settings& o) const {
         return palette == o.palette && brightness == o.brightness && girth == o.girth && clearSky == o.clearSky &&
-               motion == o.motion && cloudSize == o.cloudSize;
+               motion == o.motion && cloudSize == o.cloudSize && quietGlow == o.quietGlow;
     }
 };
 
@@ -69,10 +71,10 @@ private:
     bool held_ = false;
 };
 
-enum class Setting : uint8_t { None, Palette, ClearSky, Brightness, Girth, Motion, CloudSize };
+enum class Setting : uint8_t { None, Palette, ClearSky, Brightness, Girth, Motion, CloudSize, QuietGlow };
 
 struct ControlEvent {
-    enum class Kind : uint8_t { None, Changed, WakeDisplay, Relevel, CalibrateMounting };
+    enum class Kind : uint8_t { None, Changed, WakeDisplay, Relevel, CalibrateMounting, SoundOn, SoundOff };
     Kind kind = Kind::None;
     Setting changed = Setting::None;
 };

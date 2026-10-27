@@ -37,7 +37,10 @@ struct Hand {
         unit.pushed &= ~(1 << (knob - 1));
         for (int i = 0; i < 5; ++i) read();
     }
-    Hand() { read(); }  // the first reading only sets where the counts start
+    Hand() {  // the first reading sets where the counts start, and the switch's sound
+        read();
+        events.clear();
+    }
 };
 
 }  // namespace
@@ -48,7 +51,7 @@ TEST_CASE("the first reading takes the unit's counts as they are") {
     KnobReading r;
     for (int k = 0; k < KnobReading::kKnobs; ++k) r.counts[k] = 1000 + k;
     KnobPanel fresh;
-    CHECK(fresh.update(r, h.controls).count == 0);
+    for (const ControlEvent& e : fresh.update(r, h.controls)) CHECK(e.kind != ControlEvent::Kind::Changed);
     CHECK(h.settings == before);
 }
 
@@ -111,15 +114,52 @@ TEST_CASE("settings stop at their ends, and the Palette wraps around") {
     CHECK(h.settings.palette == 0);
 }
 
-TEST_CASE("the spare knobs do nothing") {
+TEST_CASE("knob 7 sets how bright the Blade stays in quiet") {
+    Hand h;
+    CHECK(h.settings.quietGlowValue() == doctest::Approx(0.15f));
+    h.click(7, 2);
+    CHECK(h.settings.quietGlowValue() == doctest::Approx(0.5f));
+    REQUIRE(!h.events.empty());
+    CHECK(h.events.back().changed == Setting::QuietGlow);
+    h.click(7, -10);
+    CHECK(h.settings.quietGlowValue() == doctest::Approx(0.05f));
+    h.push(7, 3000);
+    CHECK(h.settings.quietGlowValue() == doctest::Approx(0.15f));
+}
+
+TEST_CASE("knob 8 turns nothing") {
     Hand h;
     const Settings before = h.settings;
-    h.click(7, 5);
+    h.click(8, 5);
     h.click(8, -5);
-    h.push(7, 100);
-    h.push(7, 3000);
     CHECK(h.settings == before);
     CHECK(h.events.empty());
+}
+
+TEST_CASE("the switch turns sound on and off: at the first reading, then when flipped") {
+    KnobPanel panel;
+    Settings settings;
+    Controls controls{settings};
+    KnobReading r;
+    r.switchOn = false;
+    r.ms = 1000;
+    ControlEvents e = panel.update(r, controls);
+    REQUIRE(e.count == 1);
+    CHECK(e.events[0].kind == ControlEvent::Kind::SoundOff);
+
+    r.ms += 20;
+    CHECK(panel.update(r, controls).count == 0);  // unchanged: nothing, so 'm' keeps its say
+    r.switchOn = true;
+    r.ms += 20;
+    e = panel.update(r, controls);
+    REQUIRE(e.count == 1);
+    CHECK(e.events[0].kind == ControlEvent::Kind::SoundOn);
+    r.switchOn = false;
+    r.ms += 20;
+    e = panel.update(r, controls);
+    REQUIRE(e.count == 1);
+    CHECK(e.events[0].kind == ControlEvent::Kind::SoundOff);
+    CHECK(settings == Settings{});  // the switch is no saved setting
 }
 
 TEST_CASE("pushing a setting's knob opens the Status page; a long push puts it back to default") {
@@ -168,9 +208,9 @@ TEST_CASE("a push in progress shows which knob and what letting go will do") {
     for (int i = 0; i < 5; ++i) h.read();
     CHECK(h.panel.pressInProgress(h.now).knob == -1);
 
-    h.unit.pushed = 1 << 6;  // the spare knob shows nothing
+    h.unit.pushed = 1 << 6;  // knob 7 shows its push like knobs 1-6
     for (int i = 0; i < 40; ++i) h.read();
-    CHECK(h.panel.pressInProgress(h.now).knob == -1);
+    CHECK(h.panel.pressInProgress(h.now).knob == 6);
 }
 
 TEST_CASE("a unit that restarts (counts back to 0) doesn't spin anything") {

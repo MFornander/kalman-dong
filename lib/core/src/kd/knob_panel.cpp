@@ -6,7 +6,7 @@ namespace {
 
 constexpr Setting kTurns[KnobReading::kKnobs] = {
     Setting::Palette, Setting::Brightness, Setting::ClearSky, Setting::CloudSize,
-    Setting::Motion,  Setting::Girth,      Setting::None,     Setting::None,
+    Setting::Motion,  Setting::Girth,      Setting::QuietGlow, Setting::None,
 };
 constexpr int kButtonCKnob = 7;
 
@@ -14,6 +14,8 @@ constexpr int kButtonCKnob = 7;
 
 ControlEvents KnobPanel::update(const KnobReading& r, Controls& controls) {
     ControlEvents out;
+    if (!started_ || r.switchOn != switchOn_)
+        out.add({r.switchOn ? ControlEvent::Kind::SoundOn : ControlEvent::Kind::SoundOff, Setting::None});
     switchOn_ = r.switchOn;
     for (int k = 0; k < KnobReading::kKnobs; ++k) {
         const int32_t delta = static_cast<int32_t>(static_cast<uint32_t>(r.counts[k]) -

@@ -8,11 +8,13 @@
 //   4      cloud size     Status page     back to default
 //   5      cloud motion   Status page     back to default
 //   6      Girth          Status page     back to default
-//   7      (spare)
+//   7      quiet glow     Status page     back to default
 //   8      (spare)        Status page     Re-level            Mounting Calibration
 //
 // Knob 8's push is button C. A quick push never changes a setting, so
-// bumping a knob while turning it is harmless.
+// bumping a knob while turning it is harmless. The toggle switch turns sound
+// on and off: it decides when the unit is first read and whenever it is
+// flipped; in between, serial 'm' can still change it.
 #pragma once
 
 #include <cstdint>
@@ -53,7 +55,7 @@ public:
     bool switchOn() const { return switchOn_; }
 
 private:
-    bool started_ = false;
+    bool started_ = false;  // a first reading has set where the counts start
     int32_t lastCounts_[KnobReading::kKnobs] = {};
     int carry_[KnobReading::kKnobs] = {};  // counts toward the next step
     ButtonTracker pushes_[KnobReading::kKnobs];

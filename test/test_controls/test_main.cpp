@@ -117,11 +117,13 @@ TEST_CASE("settings loaded from flash are forced into range") {
     s.brightness = 9;
     s.girth = 77;
     s.clearSky = 5;
+    s.quietGlow = 42;
     s.sanitize();
     CHECK(s.palette < paletteCount());
     CHECK(s.brightnessValue() > 0.f);
     CHECK(s.girthValue() <= 0.6f);
     CHECK(s.clearSkyValue() <= 0.5f);
+    CHECK(s.quietGlow < 5);
 }
 
 TEST_CASE("holding C for 5 seconds starts Mounting Calibration, and nothing else") {

@@ -20,6 +20,7 @@ kd::Settings loadSettings() {
         s.clearSky = prefs.getUChar("clearsky", s.clearSky);
         s.motion = prefs.getUChar("motion", s.motion);
         s.cloudSize = prefs.getUChar("cloudsize", s.cloudSize);
+        s.quietGlow = prefs.getUChar("quietglow", s.quietGlow);
     }
     s.sanitize();
     return s;
@@ -33,6 +34,7 @@ void saveSettings(const kd::Settings& s) {
     prefs.putUChar("clearsky", s.clearSky);
     prefs.putUChar("motion", s.motion);
     prefs.putUChar("cloudsize", s.cloudSize);
+    prefs.putUChar("quietglow", s.quietGlow);
 }
 
 kd::Vec3 loadGyroBias() {

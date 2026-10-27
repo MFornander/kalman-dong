@@ -81,22 +81,26 @@ keep working alongside.
 | 4    | cloud size   | Status page | back to default |                      |
 | 5    | cloud motion | Status page | back to default |                      |
 | 6    | Girth        | Status page | back to default |                      |
-| 7    | spare        |             |                 |                      |
+| 7    | quiet glow: 5, 15, 30, 50, 75% | Status page | back to default |  |
 | 8    | spare        | Status page | Re-level        | Mounting Calibration |
 
 Knob 8's push works like button C. A quick push never changes a setting, so
-bumping a knob while turning it is harmless. The toggle switch and the
-unit's LEDs are unused. It runs from the Grove port's 3.3 V as it is.
+bumping a knob while turning it is harmless. **Quiet glow** (knob 7) is how
+bright the Blade stays in silence while sound drives brightness. The
+**toggle switch** turns sound on and off: it decides at power-on and
+whenever it's flipped, and serial `m` still works in between. The unit's
+LEDs stay off. It runs from the Grove port's 3.3 V as it is.
 
 Power on and hold the Dong still for a second. **Ignition** extends the
 Blade like a lightsaber while it learns which way is down, then it fades into
 the clouds. Re-level (hold C) points the clouds' reference heading where you
 are pointing. After a minute at Rest the Blade dims; any motion wakes it.
 
-Sound drives brightness: in the room's usual quiet the Blade glows at 15%,
-and it brightens to full with the loudest sounds it has heard lately. A
-steady hum (a fan, a crowd) fades back to quiet within about 15 s, so beats
-and shouts over it still show. Serial `m` turns this off and on.
+Sound drives brightness: in the room's usual quiet the Blade glows at 15%
+(the *quiet glow*; knob 7 on an 8-Encoder unit changes it), and it brightens
+to full with the loudest sounds it has heard lately. A steady hum (a fan, a
+crowd) fades back to quiet within about 15 s, so beats and shouts over it
+still show. Serial `m` or the knob unit's switch turns this off and on.
 
 ### Mounting Calibration (once per build)
 
@@ -179,7 +183,7 @@ version and which pads A, B and C are on, when you type `?` (or `h`):
 | `c` | start Mounting Calibration (as holding C for 5 s) |
 | `k` | log the 8-Encoder unit's counts, pushes and switch as they change (again: stop) |
 | **Sound** | |
-| `m` | sound drives brightness, or not |
+| `m` | sound drives brightness, or not (as the 8-Encoder unit's switch) |
 | `l` | log the mic's level and Loudness 10 times a second (again: stop) |
 | **Motion** | |
 | `f` | next orientation filter (Mahony, Kalman) |
