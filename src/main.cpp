@@ -15,6 +15,7 @@
 #include <soc/gpio_reg.h>
 #include <soc/io_mux_reg.h>
 
+#include <algorithm>
 #include <vector>
 
 #include "kd/button_log.h"
@@ -363,6 +364,42 @@ const char* padName(int pin) {
 }
 
 // Serial '?': the buttons, then every command grouped by what it's for.
+// What each task on a core used of it since the last call (FreeRTOS run-time
+// stats), busiest first; IDLE is what was left over.
+void printCoreLoad(BaseType_t core) {
+    constexpr int kMaxTasks = 32;
+    static TaskStatus_t now[kMaxTasks];
+    static struct {
+        TaskHandle_t task;
+        uint32_t ran;
+    } before[kMaxTasks];
+    static int beforeCount = 0;
+    static uint32_t beforeTotal = 0;
+    uint32_t total = 0;
+    const int n = uxTaskGetSystemState(now, kMaxTasks, &total);
+    const uint32_t span = total - beforeTotal;
+    struct Share {
+        const char* name;
+        float percent;
+    } shares[kMaxTasks];
+    int count = 0;
+    for (int i = 0; i < n; ++i) {
+        if (now[i].xCoreID != core) continue;
+        uint32_t ran = now[i].ulRunTimeCounter;
+        for (int j = 0; j < beforeCount; ++j)
+            if (before[j].task == now[i].xHandle) ran -= before[j].ran;
+        shares[count++] = {now[i].pcTaskName, span ? 100.f * ran / span : 0.f};
+    }
+    std::sort(shares, shares + count, [](const Share& a, const Share& b) { return a.percent > b.percent; });
+    Serial.printf("# core %d over %.1f s:", int(core), span * 1e-6f);
+    for (int i = 0; i < count; ++i)
+        if (shares[i].percent >= 0.5f) Serial.printf(" %s %.0f%%", shares[i].name, shares[i].percent);
+    Serial.println();
+    beforeCount = n;
+    for (int i = 0; i < n; ++i) before[i] = {now[i].xHandle, now[i].ulRunTimeCounter};
+    beforeTotal = total;
+}
+
 void printHelp() {
     Serial.printf(
         "# kalman-dong %s (%s), profile %s\n"
@@ -400,6 +437,7 @@ void printHelp() {
         "#   g  next voice gain (1x to 32x; 'i' shows it)\n"
         "#   u  next silence wait after letting go (600, 450, 300, 200 ms)\n"
         "#   V  list every spoken command\n"
+        "#   W  wake word on/off (say it, then a command within 4 s)\n"
         "#\n"
 #endif
         "# Motion\n"
@@ -518,6 +556,13 @@ void handleSerial() {
                 Serial.printf("# voice: up to %lu ms of silence after letting go\n", (unsigned long)voice.flushMs());
                 break;
             }
+            case 'W':
+                voice.setWake(!voice.wake());
+                if (*voice.wakeName())
+                    Serial.printf("# voice: wake word '%s' %s\n", voice.wakeName(), voice.wake() ? "on" : "off");
+                else
+                    Serial.println("# voice: no wake word model");
+                break;
             case 'V': {
                 size_t n = 0;
                 const kd::VoicePhrase* phrases = kd::voicePhrases(n);
@@ -542,6 +587,7 @@ void handleSerial() {
                               (unsigned long)quickCCount, (unsigned long)statusToggleCount);
                 Serial.printf("# imu us: read %.0f track %.0f (filter %s)\n", imuReadUs, imuTrackUs,
                               tracker.filter().name());
+                printCoreLoad(0);
                 Serial.printf("# mic %s: %.1f dB (quiet %.1f, loud %.1f) loudness %.2f, %.0f us per %u samples, %s\n",
                               micOk ? "ok" : "failed", micDb, micQuietDb, micLoudDb, loudness, micUs,
                               unsigned(kMicBlock), soundOn ? "drives brightness" : "off");
@@ -553,6 +599,11 @@ void handleSerial() {
                                   voice.modelName(), padName(kTalkPin), v.gain, v.detectUs,
                                   (unsigned long)v.worstDetectUs, (unsigned long)v.chunkSamples,
                                   (unsigned long)v.worstBacklogMs, (unsigned long)v.dropped);
+                    if (*voice.wakeName())
+                        Serial.printf("# wake word '%s' %s: detect %.0f us (worst %lu) per %lu samples, %lu heard\n",
+                                      voice.wakeName(), voice.wake() ? "on" : "off", v.wakeUs,
+                                      (unsigned long)v.worstWakeUs, (unsigned long)v.wakeChunkSamples,
+                                      (unsigned long)v.wakes);
                 } else {
                     Serial.printf("# voice off: %s\n", voice.error());
                 }
@@ -709,8 +760,9 @@ void setup() {
         const uint32_t t0 = millis();
         voiceOk = voice.begin(kVoicePriority, 0);
         if (voiceOk)
-            Serial.printf("# voice: %s loaded in %lu ms; hold %s and speak\n", voice.modelName(),
-                          (unsigned long)(millis() - t0), padName(kTalkPin));
+            Serial.printf("# voice: %s loaded in %lu ms; hold %s and speak%s%s%s\n", voice.modelName(),
+                          (unsigned long)(millis() - t0), padName(kTalkPin), *voice.wakeName() ? ", or say '" : "",
+                          voice.wakeName(), *voice.wakeName() ? "' first" : "");
         else
             Serial.printf("# voice off: %s\n", voice.error());
     }
@@ -832,14 +884,27 @@ void loop() {
     // Spoken commands first, so one heard before the talk button's release
     // cancels its press before the release reaches Controls.
     static bool heardThisPress = false;
+    static bool woken = false;  // listening after the wake word
     Voice::Result heard;
     while (voiceOk && voice.poll(heard)) {
-        if (heard.kind == Voice::Result::Kind::Heard) {
-            Serial.printf("# voice: heard '%s' (%s, p %.2f) %lu ms after pressing\n", heard.words,
-                          kd::voiceCommandName(heard.command), heard.probability, (unsigned long)heard.afterMs);
+        if (heard.kind == Voice::Result::Kind::Woke) {
+            Serial.printf("# voice: heard '%s'; listening for %lu ms\n", voice.wakeName(),
+                          (unsigned long)Voice::kWakeListenMs);
+            woken = true;
+            heardThisPress = false;
+            lastActiveMs = nowMs;
+            if (!status_display::bladeView()) wakeDisplay = true;  // as USR3: the Blade view keeps its place
+        } else if (heard.kind == Voice::Result::Kind::Heard) {
+            Serial.printf("# voice: heard '%s' (%s, p %.2f) %lu ms after %s\n", heard.words,
+                          kd::voiceCommandName(heard.command), heard.probability, (unsigned long)heard.afterMs,
+                          heard.byWake ? "the wake word" : "pressing");
             if (ptt.talking()) controls.cancel(ptt.talk());
             heardThisPress = true;
             onControl(kd::applyVoice(heard.command, controls, nowMs));
+        } else if (heard.byWake) {
+            woken = false;
+            Serial.printf("# voice: done %lu ms after the wake word, peak %.0f dBFS%s\n",
+                          (unsigned long)heard.afterMs, heard.peakDb, heardThisPress ? "" : ", nothing heard");
         } else {
             ptt.finished();
             Serial.printf("# voice: done %lu ms after letting go (%lu ms of silence fed, up to %lu), peak %.0f dBFS%s\n",
@@ -859,6 +924,7 @@ void loop() {
             const kd::PushToTalk::Admit a = ptt.admit(sample.down, sample.ms, nowMs);
             if (a.ask == kd::PushToTalk::Ask::Listen) {
                 heardThisPress = false;
+                woken = false;
                 voice.listen();
             } else if (a.ask == kd::PushToTalk::Ask::Finish) {
                 voice.finish();
@@ -932,7 +998,7 @@ void loop() {
         if (!status_display::bladeView()) wakeDisplay = true;  // the Status page shows the bar
     }
 #ifdef KD_VOICE
-    else if (voiceOk && ptt.talking() && !heardThisPress) {
+    else if (voiceOk && (ptt.talking() || woken) && !heardThisPress) {
         snprintf(banner, sizeof(banner), "Listening...");
         bannerUntilMs = nowMs + 300;
     }
