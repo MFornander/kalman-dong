@@ -25,8 +25,8 @@ defined in [CONTEXT.md](CONTEXT.md); key decisions are in [docs/adr/](docs/adr/)
   whenever it lies still.
 - **Sound drives brightness** from the onboard mic: the Blade glows at a
   set *quiet glow* in silence and brightens with beats and shouts.
-- **Voice commands** (prototype): hold USR3 and say two words, like
-  *next palette* or *faster clouds*.
+- **Voice commands** (prototype): hold USR3, or say the wake word, and say
+  two words, like *next palette* or *faster clouds*.
 - **Three buttons** with quick, long and held presses, and an optional
   **8-Encoder knob unit** that gives every setting its own knob.
 - **Sleeps when set down:** after a minute lying still the Blade dims and
@@ -86,6 +86,14 @@ per board:
 pio run -e xiao_screen -t upload_voice_model
 ```
 
+**Wake word** (prototype): say *Hi ESP*, then a command within 4 s. It
+uses Espressif's free WakeNet9 "Hi ESP" model, already in the model
+partition, until a "Yo Dong" model exists
+([docs/research/wake-word.md](docs/research/wake-word.md)). Listening for
+it costs 14% of core 0, all of it taken from the Status display; the IMU
+keeps 818 Hz and the LEDs 240 fps. It is on at boot; serial `W` turns it
+off and on.
+
 Serial `t` listens for 3 s as if USR3 were held, `g` steps the gain the mic
 gets before the recognizer, `u` steps that closing silence (600 ms; 450,
 300 and 200 to experiment), `V` lists every phrase, and `i` shows the
@@ -139,6 +147,7 @@ version and which pads A, B and C are on, when you type `?` (or `h`):
 | `g` | next voice gain (1x to 32x) |
 | `u` | next silence wait after letting go (600, 450, 300, 200 ms) |
 | `V` | list every spoken command |
+| `W` | wake word on or off |
 | **Motion** | |
 | `f` | next orientation filter (Mahony, Kalman) |
 | `a` | axis check, 5 times a second: which sensor axis sees gravity, where the Blade points (again: stop) |
